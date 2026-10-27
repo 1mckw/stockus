@@ -449,6 +449,34 @@ def analyze_symbol(bars):
     return {"up": up, "down": down, "channel": channel, "window": used}
 
 
+def shift_line(L, offset: int):
+    """Map line indices from a longer bar series onto a suffix of `offset` fewer bars."""
+    if not L or offset <= 0:
+        return L
+    line = L.get("line")
+    if line:
+        line = {"m": line["m"], "b": line["b"] + line["m"] * offset}
+    touches = [i - offset for i in (L.get("touches") or []) if i >= offset]
+    out = dict(L)
+    out["line"] = line
+    out["touches"] = touches
+    for key in ("start", "drawFrom", "drawTo"):
+        if out.get(key) is not None:
+            out[key] = out[key] - offset
+    return out
+
+
+def shift_analysis(analysis: dict, offset: int) -> dict:
+    if offset <= 0:
+        return analysis
+    return {
+        "window": analysis.get("window"),
+        "up": shift_line(analysis.get("up"), offset),
+        "down": shift_line(analysis.get("down"), offset),
+        "channel": shift_line(analysis.get("channel"), offset),
+    }
+
+
 def slim_line(L):
     if not L:
         return None
@@ -488,6 +516,7 @@ def scan_index(index: str, date_str: str, sleep_s: float) -> dict:
                 raise ValueError("該日期前資料不足")
             analysis = analyze_symbol(bars)
             if len(bars) > CHART_WINDOW:
+                analysis = shift_analysis(analysis, len(bars) - CHART_WINDOW)
                 bars = bars[-CHART_WINDOW:]
             results.append({
                 "symbol": sym,

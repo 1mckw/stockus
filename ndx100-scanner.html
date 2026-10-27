@@ -1610,8 +1610,50 @@ function lineNameOf(L) {
  * Draw one daily chart on a canvas, sized from its rendered width.
  * opts: { date, compact, window }
  */
+/** Chartpack 若只存最後 N 根，觸點索引仍可能是完整序列；平移到目前 bars。 */
+function rebaseAnalysis(analysis, nBars) {
+  if (!analysis || !nBars) return analysis;
+  const lines = [analysis.up, analysis.down, analysis.channel].filter(Boolean);
+  if (!lines.length) return analysis;
+  const idxs = [];
+  for (const L of lines) {
+    for (const v of [L.drawFrom, L.drawTo, L.start, ...(L.touches || [])]) {
+      if (v != null) idxs.push(v);
+    }
+  }
+  const maxI = idxs.length ? Math.max(...idxs) : 0;
+  if (maxI < nBars) return analysis;
+  let nFull = maxI + 1;
+  for (const L of lines) {
+    if (L.start != null && L.windowSize) nFull = Math.max(nFull, L.start + L.windowSize);
+  }
+  const offset = nFull - nBars;
+  if (offset <= 0) return analysis;
+  const shift = (L) => {
+    if (!L) return L;
+    const line = L.line
+      ? { m: L.line.m, b: L.line.b + L.line.m * offset }
+      : L.line;
+    return {
+      ...L,
+      line,
+      start: L.start != null ? L.start - offset : L.start,
+      drawFrom: L.drawFrom != null ? L.drawFrom - offset : L.drawFrom,
+      drawTo: L.drawTo != null ? L.drawTo - offset : L.drawTo,
+      touches: (L.touches || []).map(i => i - offset).filter(i => i >= 0)
+    };
+  };
+  return {
+    ...analysis,
+    up: shift(analysis.up),
+    down: shift(analysis.down),
+    channel: shift(analysis.channel)
+  };
+}
+
 function drawChart(canvas, bars, analysis, symbol, opts = {}) {
   if (!canvas || !bars || !bars.length) return;
+  analysis = rebaseAnalysis(analysis, bars.length);
   const c = CFG.colors;
   const compact = !!opts.compact;
 
@@ -2411,12 +2453,16 @@ async function openPack(dateStr) {
       state.index = json.index;
       syncIndexUi();
     }
-    state.results = (json.results || []).map(r => ({
-      symbol: r.symbol,
-      error: r.error || null,
-      bars: r.bars || null,
-      analysis: r.analysis || null
-    }));
+    state.results = (json.results || []).map(r => {
+      const bars = r.bars || null;
+      const analysis = bars && r.analysis ? rebaseAnalysis(r.analysis, bars.length) : (r.analysis || null);
+      return {
+        symbol: r.symbol,
+        error: r.error || null,
+        bars,
+        analysis
+      };
+    });
     state.selected = state.results.find(r => r.bars)?.symbol || null;
     state.cache = {};
     renderList();
