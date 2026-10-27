@@ -31,6 +31,7 @@ MAX_BODY_BREAKS = 5
 HORIZ_SLOPE_PCT = 0.015
 MIN_TOUCHES = 4
 WINDOWS = [200, 300, 400, 500, 600, 800, 1000]
+CHART_WINDOW = 600
 
 
 def today_iso() -> str:
@@ -486,6 +487,8 @@ def scan_index(index: str, date_str: str, sleep_s: float) -> dict:
             if len(bars) < 50:
                 raise ValueError("該日期前資料不足")
             analysis = analyze_symbol(bars)
+            if len(bars) > CHART_WINDOW:
+                bars = bars[-CHART_WINDOW:]
             results.append({
                 "symbol": sym,
                 "bars": bars,
@@ -511,6 +514,88 @@ def scan_index(index: str, date_str: str, sleep_s: float) -> dict:
     }
 
 
+def recent_signal(row: dict, lookback: int = 5) -> str:
+    bars = row.get("bars") or []
+    analysis = row.get("analysis") or {}
+    if not bars:
+        return row.get("error") or "無資料"
+    n = len(bars)
+    frm = max(0, n - lookback)
+    breakout = touch = False
+    for key in ("up", "down", "channel"):
+        L = analysis.get(key)
+        if not L or not L.get("line"):
+            continue
+        kind = L.get("kind")
+        for i in range(frm, n):
+            y = y_at(L["line"], i)
+            bar = bars[i]
+            tol = abs(y) * TOUCH_TOL_PCT
+            if kind == "support":
+                if body_top(bar) < y - tol:
+                    breakout = True
+                elif (bar["l"] <= y + tol and body_top(bar) >= y - tol) or abs(bar["l"] - y) <= tol:
+                    touch = True
+            else:
+                if body_bot(bar) > y + tol:
+                    breakout = True
+                elif (bar["h"] >= y - tol and body_bot(bar) <= y + tol) or abs(bar["h"] - y) <= tol:
+                    touch = True
+    if breakout:
+        return "突破"
+    if touch:
+        return "觸碰"
+    return ""
+
+
+def write_latest_md(out: Path, packs: list[dict]) -> None:
+    lines = ["# 最新掃描", ""]
+    for pack in packs:
+        lines.append(f"## {pack.get('indexLabel') or pack.get('index')} · {pack.get('date')}")
+        lines.append("")
+        lines.append(f"可用圖表 **{pack.get('count', 0)}** 檔。在 GitHub Pages 開啟掃描器檢視圖表。")
+        lines.append("")
+        lines.append("| 代號 | 近 5 根 | 線 |")
+        lines.append("| --- | --- | --- |")
+        for r in pack.get("results") or []:
+            sig = recent_signal(r) if r.get("bars") else (r.get("error") or "無資料")
+            a = r.get("analysis") or {}
+            labels = []
+            for key in ("up", "down", "channel"):
+                L = a.get(key)
+                if L and L.get("label"):
+                    labels.append(L["label"])
+            lines.append(f"| {r.get('symbol')} | {sig or '—'} | {' / '.join(labels) or '—'} |")
+        lines.append("")
+    (out.parent / "LATEST.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_manifest(out: Path) -> dict:
+    packs = []
+    for fp in sorted(out.glob("*-????-??-??.json"), reverse=True):
+        name = fp.stem
+        # index-YYYY-MM-DD
+        if len(name) < 12 or name[-10] != "-":
+            continue
+        date = name[-10:]
+        index = name[:-11]
+        try:
+            data = json.loads(fp.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+        packs.append({
+            "index": data.get("index") or index,
+            "date": data.get("date") or date,
+            "file": fp.name,
+            "label": data.get("indexLabel") or index.upper(),
+            "count": data.get("count", 0),
+        })
+    packs.sort(key=lambda x: (x["date"], x["index"]), reverse=True)
+    manifest = {"packs": packs}
+    (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    return manifest
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Scan NDX100 / DJI30 daily trend lines")
     p.add_argument("--index", choices=["ndx100", "dji30", "both"], default="both")
@@ -523,11 +608,16 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     ensure_packs_dir()
     indexes = ["ndx100", "dji30"] if args.index == "both" else [args.index]
+    written = []
     for idx in indexes:
         pack = scan_index(idx, date_str, args.sleep)
         fp = out / f"{idx}-{date_str}.json"
         fp.write_text(json.dumps(pack, ensure_ascii=False), encoding="utf-8")
         print(f"wrote {fp} · {pack['count']} ok", flush=True)
+        written.append(pack)
+    write_manifest(out)
+    write_latest_md(out, written)
+    print("wrote chartpacks/manifest.json and LATEST.md", flush=True)
 
 
 if __name__ == "__main__":

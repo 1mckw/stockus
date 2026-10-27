@@ -1014,13 +1014,17 @@ function barsAsOf(bars, dateStr) {
 }
 
 /* ========== Data fetch (prefer local server.py proxy) ========== */
+const ON_PAGES = /\.github\.io$/i.test(location.hostname);
 const LOCAL_BASE = (() => {
-  const { protocol, hostname, port } = location;
-  if (protocol === "http:" || protocol === "https:") {
-    if (hostname === "127.0.0.1" || hostname === "localhost") return "";
-  }
+  const { hostname } = location;
+  if (hostname === "127.0.0.1" || hostname === "localhost") return "";
+  if (ON_PAGES) return "";
   return "http://127.0.0.1:8765";
 })();
+
+function packAsset(file) {
+  return new URL(`chartpacks/${file}`, location.href).href;
+}
 
 function medianGapDays(bars) {
   if (!bars || bars.length < 3) return Infinity;
@@ -2295,9 +2299,17 @@ function buildPackPayload(dateStr) {
 async function refreshSavedPacks(selectDate) {
   const sel = $("savedPacks");
   try {
-    const res = await fetch(`${LOCAL_BASE}/api/packs`);
-    const json = await res.json();
-    const dates = json.dates || [];
+    let dates = [];
+    if (ON_PAGES) {
+      const res = await fetch(packAsset("manifest.json"), { cache: "no-store" });
+      const json = await res.json();
+      const packs = (json.packs || []).filter(p => !state.index || p.index === state.index);
+      dates = [...new Set(packs.map(p => p.date))];
+    } else {
+      const res = await fetch(`${LOCAL_BASE}/api/packs`);
+      const json = await res.json();
+      dates = json.dates || [];
+    }
     const keep = selectDate || sel.value || state.packDate;
     sel.innerHTML = "";
     if (!dates.length) {
@@ -2322,6 +2334,10 @@ async function refreshSavedPacks(selectDate) {
 }
 
 async function savePack(dateStr) {
+  if (ON_PAGES) {
+    setStatusText("GitHub Pages 為唯讀；結果由 Actions 掃描寫入倉庫");
+    return false;
+  }
   const d = dateStr || state.packDate || $("packDate").value || todayISO();
   if (!state.results.some(r => r.bars)) {
     setStatusText("無可保存的 Chartpack");
@@ -2354,7 +2370,9 @@ async function openPack(dateStr) {
   }
   setStatusText(`開啟 ${d} Chartpack…`);
   try {
-    const res = await fetch(`${LOCAL_BASE}/api/packs/${encodeURIComponent(d)}`);
+    const res = ON_PAGES
+      ? await fetch(packAsset(`${state.index}-${d}.json`), { cache: "no-store" })
+      : await fetch(`${LOCAL_BASE}/api/packs/${encodeURIComponent(d)}`);
     const json = await res.json();
     if (!res.ok || json.error) throw new Error(json.error || ("HTTP " + res.status));
     state.packDate = json.date || d;
@@ -2514,7 +2532,10 @@ $("indexSelect").onchange = () => {
   state.index = INDEXES[v] ? v : "ndx100";
   syncIndexUi();
   state.symbols = [...currentIndexConfig().fallback];
-  setStatusText(`已選 ${currentIndexConfig().label} — 選日期後開始掃描`);
+  refreshSavedPacks().then((dates) => {
+    if (ON_PAGES && dates[0]) openPack(dates[0]);
+    else setStatusText(`已選 ${currentIndexConfig().label} — 選日期後開始掃描`);
+  });
 };
 syncIndexUi();
 $("btnScan").onclick = () => runScan();
@@ -2571,7 +2592,9 @@ function onViewportResize() {
 window.addEventListener("resize", onViewportResize);
 window.visualViewport?.addEventListener("resize", onViewportResize);
 
-refreshSavedPacks();
+refreshSavedPacks().then((dates) => {
+  if (ON_PAGES && dates[0]) openPack(dates[0]);
+});
 </script>
 </body>
 </html>

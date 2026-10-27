@@ -16,13 +16,24 @@ on:
         required: false
         default: ""
   schedule:
-    # US cash close ~21:00 UTC; buffer for Yahoo
     - cron: "30 22 * * 1-5"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: scan-pages
+  cancel-in-progress: false
 
 jobs:
   scan:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -36,7 +47,30 @@ jobs:
           DATE="${{ github.event.inputs.date }}"
           if [ -z "$INDEX" ]; then INDEX=both; fi
           python scan.py --index "$INDEX" --date "$DATE" --sleep 0.3
-      - name: Upload chartpacks
+      - name: Commit results
+        run: |
+          git add chartpacks LATEST.md
+          if git diff --cached --quiet; then
+            echo "No result changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update scan chartpacks"
+          git push
+      - name: Prepare GitHub Pages
+        run: |
+          mkdir -p _site/chartpacks
+          cp ndx100-scanner.html _site/index.html
+          cp LATEST.md _site/ 2>/dev/null || true
+          cp chartpacks/* _site/chartpacks/ 2>/dev/null || true
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4
+      - name: Upload chartpacks artifact
         uses: actions/upload-artifact@v4
         with:
           name: chartpacks

@@ -23,4 +23,11 @@ python server.py
 python scan.py --index both
 ```
 
-在 GitHub：**Actions → Scan → Run workflow**。可選指數與日期。平日 22:30 UTC 也會自動跑。結果在該次 run 的 **Artifacts → chartpacks**。
+在 GitHub：**Actions → Scan → Run workflow**。可選指數與日期。平日 22:30 UTC 也會自動跑。
+
+掃描完成後可直接在 GitHub 上看：
+
+- 表格：[LATEST.md](https://github.com/1mckw/stockus/blob/main/LATEST.md)
+- 圖表站（GitHub Pages）：<https://1mckw.github.io/stockus/>
+
+第一次請到倉庫 **Settings → Pages → Source: GitHub Actions**。環境 `github-pages` 若出現等待審核，按 Approve。
