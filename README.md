@@ -23,7 +23,12 @@ python server.py
 python scan.py --index both
 ```
 
-在 GitHub：**Actions → Scan → Run workflow**。可選指數與日期。平日自動跑兩次：**10:30 UTC**、**22:30 UTC**。
+在 GitHub 只跑 **Actions → Scan → Run workflow**：
+
+- 預設會掃描並更新網站
+- 把「掃描最新日線」關掉 = 只佈署現有 Chartpack 到 Pages
+
+平日自動兩次：**10:30 UTC**、**22:30 UTC**（掃描 + 更新網站）。
 
 掃描完成後可直接在 GitHub 上看：
 
