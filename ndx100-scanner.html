@@ -12,6 +12,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="NDX 掃描" />
 <meta name="format-detection" content="telephone=no" />
+<script>if (/\.github\.io$/i.test(location.hostname)) document.documentElement.classList.add("is-pages");</script>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -685,6 +686,15 @@
     50% { opacity: 0.3; }
   }
 
+  html.is-pages .pages-hide,
+  body.is-pages .pages-hide { display: none !important; }
+  html.is-pages .tool-group[aria-label="掃描"],
+  body.is-pages .tool-group[aria-label="掃描"] {
+    border: 0;
+    background: transparent;
+    padding-right: 0;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
       animation-duration: 0.01ms !important;
@@ -832,13 +842,13 @@
         <label class="field"><span>日期</span>
           <input type="date" id="packDate" />
         </label>
-        <label class="field"><span>已存</span>
+        <label class="field pages-hide"><span>已存</span>
           <select id="savedPacks" title="已保存的 Chartpack">
             <option value="">— 無 —</option>
           </select>
         </label>
-        <button type="button" id="btnOpen" disabled>開啟</button>
-        <button type="button" id="btnSave" disabled>保存</button>
+        <button type="button" id="btnOpen" class="pages-hide" disabled>開啟</button>
+        <button type="button" id="btnSave" class="pages-hide" disabled>保存</button>
       </div>
       <div class="tool-group" aria-label="掃描">
         <label class="field"><span>指數</span>
@@ -847,8 +857,8 @@
             <option value="dji30">DJI30</option>
           </select>
         </label>
-        <button type="button" id="btnScan" class="primary">開始掃描</button>
-        <button type="button" id="btnStop" class="ghost-danger" disabled>停止</button>
+        <button type="button" id="btnScan" class="primary pages-hide">開始掃描</button>
+        <button type="button" id="btnStop" class="ghost-danger pages-hide" disabled>停止</button>
       </div>
     </div>
   </header>
@@ -895,7 +905,7 @@
         <div class="empty view-pane is-on" id="emptyHint">
           <div class="empty-ico" aria-hidden="true"></div>
           <h3>還沒有圖表</h3>
-          <p>先執行 <code>python server.py</code> 並開啟本頁，選好日期後按「開始掃描」；或從右上「已存」開啟歷史 Chartpack。</p>
+          <p id="emptyCopy">先執行 <code>python server.py</code> 並開啟本頁，選好日期後按「開始掃描」；或從右上「已存」開啟歷史 Chartpack。</p>
         </div>
         <div id="singleView" class="view-pane">
           <div class="chart-wrap">
@@ -1015,6 +1025,12 @@ function barsAsOf(bars, dateStr) {
 
 /* ========== Data fetch (prefer local server.py proxy) ========== */
 const ON_PAGES = /\.github\.io$/i.test(location.hostname);
+if (ON_PAGES) {
+  document.documentElement.classList.add("is-pages");
+  document.body.classList.add("is-pages");
+  const emptyCopy = $("emptyCopy");
+  if (emptyCopy) emptyCopy.textContent = "選上方日期載入已掃描的 Chartpack。";
+}
 const LOCAL_BASE = (() => {
   const { hostname } = location;
   if (hostname === "127.0.0.1" || hostname === "localhost") return "";
@@ -2416,7 +2432,9 @@ async function rebuildForDate(dateStr) {
     if (dates.includes(dateStr)) {
       await openPack(dateStr);
     } else {
-      setStatusText(`已選 ${dateStr} — 點「掃描」或從「已存」開啟`);
+      setStatusText(ON_PAGES
+        ? `沒有 ${dateStr} 的 Chartpack`
+        : `已選 ${dateStr} — 點「掃描」或從「已存」開啟`);
     }
     return;
   }
