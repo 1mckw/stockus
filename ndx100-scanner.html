@@ -961,7 +961,8 @@ const CFG = {
   touchMergeBars: 5,         // 相鄰 ≤5 根內的觸點合併為 1
   maxTouchGapBars: 120,      // 相鄰觸點間隔不得超過 120 根 K
   recentTouchBars: 60,       // 至少一觸點須落在最新 60 根內
-  maxBodyBreaks: 5,
+  maxBodyBreaks: 3,          // 成形後實體穿越最多 3 根
+  maxWickBreaks: 5,          // 成形後引線穿越最多 5 根
   horizSlopePct: 0.015,      // |m|*bars / midPrice < 1.5% → near horizontal
   minTouches: 4,
   windows: [200, 300, 400, 500, 600, 800, 1000], // 做線視窗（由小到大）
@@ -1200,14 +1201,31 @@ function compactTouchesByGap(touches, recentFrom) {
 /**
  * Evaluate a candidate line on bars[start..end)
  * kind: "support" (upward / creek) or "resistance" (downward / ice)
- * 實體完全穿越才算突破；僅引線穿越不計突破、可當觸點。
- * 實體突破數只從「第一個觸點」起算（線成形後），允許最多 maxBodyBreaks。
+ * 成形後：實體穿越 ≤ maxBodyBreaks（3），引線穿越 ≤ maxWickBreaks（5）。
  */
+function countLineBreaks(bars, from, line, kind) {
+  let bodyBreaks = 0;
+  let wickBreaks = 0;
+  const n = bars.length;
+  for (let i = from; i < n; i++) {
+    const y = yAt(line, i);
+    const tol = Math.abs(y) * CFG.touchTolPct;
+    const bar = bars[i];
+    if (kind === "support") {
+      if (bodyTop(bar) < y - tol) bodyBreaks++;
+      else if (bar.l < y - tol) wickBreaks++;
+    } else if (bodyBot(bar) > y + tol) {
+      bodyBreaks++;
+    } else if (bar.h > y + tol) {
+      wickBreaks++;
+    }
+  }
+  return { bodyBreaks, wickBreaks };
+}
+
 function evaluateLine(bars, start, line, kind, pivots) {
   const n = bars.length;
   const touches = [];
-  let bodyBreaks = 0;
-  let formed = false; // 至少一觸點後才累計實體突破
 
   for (let i = start; i < n; i++) {
     const y = yAt(line, i);
@@ -1217,17 +1235,11 @@ function evaluateLine(bars, start, line, kind, pivots) {
     const bb = bodyBot(bar);
 
     if (kind === "support") {
-      // Body fully below line → breakthrough（僅成形後計入；引線破可不計）
-      if (bt < y - tol) {
-        if (formed) bodyBreaks++;
-        continue;
-      }
-      // Touch: low near line, or wick through but body holds above
+      if (bt < y - tol) continue;
       const wickTouch = bar.l <= y + tol && bt >= y - tol;
       const nearLow = Math.abs(bar.l - y) <= tol;
       const pivotTouch = pivots.includes(i) && bar.l <= y + tol * 2 && bb >= y - tol * 3;
       if (wickTouch || nearLow || pivotTouch) {
-        // 相鄰 touchMergeBars 根內只算 1 觸點，保留更貼線者
         const merge = CFG.touchMergeBars;
         if (!touches.length || i - touches[touches.length - 1] >= merge) {
           touches.push(i);
@@ -1237,14 +1249,9 @@ function evaluateLine(bars, start, line, kind, pivots) {
             touches[touches.length - 1] = i;
           }
         }
-        formed = true;
       }
     } else {
-      // resistance: body fully above → breakthrough
-      if (bb > y + tol) {
-        if (formed) bodyBreaks++;
-        continue;
-      }
+      if (bb > y + tol) continue;
       const wickTouch = bar.h >= y - tol && bb <= y + tol;
       const nearHigh = Math.abs(bar.h - y) <= tol;
       const pivotTouch = pivots.includes(i) && bar.h >= y - tol * 2 && bt <= y + tol * 3;
@@ -1258,32 +1265,20 @@ function evaluateLine(bars, start, line, kind, pivots) {
             touches[touches.length - 1] = i;
           }
         }
-        formed = true;
       }
     }
   }
 
-  // 間隔 ≤120，且至少一點落在最新 recentTouchBars 根內
   const recentFrom = Math.max(0, n - CFG.recentTouchBars);
   const kept = compactTouchesByGap(touches, recentFrom);
-  // 以壓縮後觸點重算實體突破（避免合併前誤計）
-  let recount = 0;
-  if (kept.length) {
-    const from = kept[0];
-    for (let i = from; i < n; i++) {
-      const y = yAt(line, i);
-      const tol = Math.abs(y) * CFG.touchTolPct;
-      if (kind === "support") {
-        if (bodyTop(bars[i]) < y - tol) recount++;
-      } else if (bodyBot(bars[i]) > y + tol) {
-        recount++;
-      }
-    }
-  }
+  const br = kept.length ? countLineBreaks(bars, kept[0], line, kind) : { bodyBreaks: 0, wickBreaks: 0 };
   return {
     touches: kept,
-    bodyBreaks: recount,
-    valid: kept.length >= CFG.minTouches && recount <= CFG.maxBodyBreaks
+    bodyBreaks: br.bodyBreaks,
+    wickBreaks: br.wickBreaks,
+    valid: kept.length >= CFG.minTouches
+      && br.bodyBreaks <= CFG.maxBodyBreaks
+      && br.wickBreaks <= CFG.maxWickBreaks
   };
 }
 
@@ -1314,6 +1309,7 @@ function applyCreekOrIce(candidate, bars, start, kind, pivots) {
     candidate.line = { m: 0, b: med };
     candidate.touches = horiz.touches;
     candidate.bodyBreaks = horiz.bodyBreaks;
+    candidate.wickBreaks = horiz.wickBreaks;
     candidate.drawFrom = horiz.touches[0];
     candidate.drawTo = horiz.touches[horiz.touches.length - 1];
     candidate.score = horiz.touches.length * 10 - horiz.bodyBreaks * 3 + 5;
@@ -1324,7 +1320,7 @@ function applyCreekOrIce(candidate, bars, start, kind, pivots) {
 }
 
 /**
- * 純水平 Creek / Ice：在視窗內以樞軸價位枚舉水平線（四點、實體破≤5）。
+ * 純水平 Creek / Ice：在視窗內以樞軸價位枚舉水平線（四點、實體破≤3、引線破≤5）。
  * 規則：1000K 趨勢線接近水平（或斜線不成）時採用。
  */
 function findBestHorizontal(bars, windowSize, kind) {
@@ -1357,6 +1353,7 @@ function findBestHorizontal(bars, windowSize, kind) {
         line: { m: 0, b: price },
         touches: ev.touches,
         bodyBreaks: ev.bodyBreaks,
+        wickBreaks: ev.wickBreaks,
         start,
         drawFrom: ev.touches[0],
         drawTo: ev.touches[ev.touches.length - 1],
@@ -1411,6 +1408,7 @@ function findBestLine(bars, windowSize, kind, opts = {}) {
         line,
         touches: ev.touches,
         bodyBreaks: ev.bodyBreaks,
+        wickBreaks: ev.wickBreaks,
         start,
         drawFrom: ev.touches[0],
         drawTo: ev.touches[ev.touches.length - 1],
@@ -1493,7 +1491,7 @@ function analyzeSymbol(bars, mode) {
     if ((up || down) && !usedWindow) usedWindow = 1000;
   }
 
-  // 單線 → 平行通道（對側同規則：四點成線、實體破≤5、引線可計觸點）
+  // 單線 → 平行通道（對側同規則：四點成線、實體破≤3、引線破≤5）
   let channel = null;
   const primary = up && !down ? up : (!up && down ? down : null);
   if (primary) channel = makeParallelChannel(primary, bars);
@@ -1503,7 +1501,7 @@ function analyzeSymbol(bars, mode) {
 
 /**
  * 由單線生成平行通道對側：同斜率，對側樞軸枚舉，
- * 須通過 evaluateLine（≥4 觸點、實體突破 ≤5）。
+ * 須通過 evaluateLine（≥4 觸點、實體突破 ≤3、引線突破 ≤5）。
  */
 function makeParallelChannel(L, bars) {
   if (!L?.touches?.length) return null;
@@ -1537,6 +1535,7 @@ function makeParallelChannel(L, bars) {
         line,
         touches: ev.touches,
         bodyBreaks: ev.bodyBreaks,
+        wickBreaks: ev.wickBreaks,
         drawFrom: Math.min(i0, ev.touches[0]),
         drawTo: n - 1,
         start: evalStart,
@@ -1914,7 +1913,7 @@ function legendHtml(analysis) {
       L.type === "uptrend" ? "c-up" : "c-down";
     const name = L.type === "channel" ? "平行通道" : L.label;
     parts.push(
-      `<span class="lg ${cls}"><b>${name}</b><em>${L.touches.length} 觸點 · 突破 ${L.bodyBreaks} · ${L.windowSize}K</em></span>`
+      `<span class="lg ${cls}"><b>${name}</b><em>${L.touches.length} 觸點 · 實體 ${L.bodyBreaks} · 引線 ${L.wickBreaks ?? 0} · ${L.windowSize}K</em></span>`
     );
   };
   add(analysis?.up);

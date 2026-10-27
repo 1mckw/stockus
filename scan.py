@@ -27,7 +27,8 @@ TOUCH_TOL_PCT = 0.0045
 TOUCH_MERGE_BARS = 5
 MAX_TOUCH_GAP_BARS = 120
 RECENT_TOUCH_BARS = 60
-MAX_BODY_BREAKS = 5
+MAX_BODY_BREAKS = 3
+MAX_WICK_BREAKS = 5
 HORIZ_SLOPE_PCT = 0.015
 MIN_TOUCHES = 4
 WINDOWS = [200, 300, 400, 500, 600, 800, 1000]
@@ -208,20 +209,30 @@ def evaluate_line(bars, start, line, kind, pivots):
                         touches[-1] = i
     recent_from = max(0, n - RECENT_TOUCH_BARS)
     kept = compact_touches_by_gap(touches, recent_from)
-    recount = 0
+    body_breaks = wick_breaks = 0
     if kept:
         for i in range(kept[0], n):
             y = y_at(line, i)
             tol = abs(y) * TOUCH_TOL_PCT
+            bar = bars[i]
             if kind == "support":
-                if body_top(bars[i]) < y - tol:
-                    recount += 1
-            elif body_bot(bars[i]) > y + tol:
-                recount += 1
+                if body_top(bar) < y - tol:
+                    body_breaks += 1
+                elif bar["l"] < y - tol:
+                    wick_breaks += 1
+            elif body_bot(bar) > y + tol:
+                body_breaks += 1
+            elif bar["h"] > y + tol:
+                wick_breaks += 1
     return {
         "touches": kept,
-        "bodyBreaks": recount,
-        "valid": len(kept) >= MIN_TOUCHES and recount <= MAX_BODY_BREAKS,
+        "bodyBreaks": body_breaks,
+        "wickBreaks": wick_breaks,
+        "valid": (
+            len(kept) >= MIN_TOUCHES
+            and body_breaks <= MAX_BODY_BREAKS
+            and wick_breaks <= MAX_WICK_BREAKS
+        ),
     }
 
 
@@ -242,6 +253,7 @@ def apply_creek_or_ice(candidate, bars, start, kind, pivots):
         candidate["line"] = {"m": 0, "b": med}
         candidate["touches"] = horiz["touches"]
         candidate["bodyBreaks"] = horiz["bodyBreaks"]
+        candidate["wickBreaks"] = horiz["wickBreaks"]
         candidate["drawFrom"] = horiz["touches"][0]
         candidate["drawTo"] = horiz["touches"][-1]
         candidate["score"] = len(horiz["touches"]) * 10 - horiz["bodyBreaks"] * 3 + 5
@@ -278,6 +290,7 @@ def find_best_horizontal(bars, window_size, kind):
                 "line": {"m": 0, "b": price},
                 "touches": ev["touches"],
                 "bodyBreaks": ev["bodyBreaks"],
+                "wickBreaks": ev["wickBreaks"],
                 "start": start,
                 "drawFrom": ev["touches"][0],
                 "drawTo": ev["touches"][-1],
@@ -318,6 +331,7 @@ def find_best_line(bars, window_size, kind, force_horiz=False):
                 "line": line,
                 "touches": ev["touches"],
                 "bodyBreaks": ev["bodyBreaks"],
+                "wickBreaks": ev["wickBreaks"],
                 "start": start,
                 "drawFrom": ev["touches"][0],
                 "drawTo": ev["touches"][-1],
@@ -381,6 +395,7 @@ def make_parallel_channel(L, bars):
                 "line": line,
                 "touches": ev["touches"],
                 "bodyBreaks": ev["bodyBreaks"],
+                "wickBreaks": ev["wickBreaks"],
                 "drawFrom": min(i0, ev["touches"][0]),
                 "drawTo": n - 1,
                 "start": eval_start,
@@ -485,6 +500,7 @@ def slim_line(L):
         "line": L.get("line"),
         "touches": L.get("touches"),
         "bodyBreaks": L.get("bodyBreaks"),
+        "wickBreaks": L.get("wickBreaks"),
         "start": L.get("start"),
         "drawFrom": L.get("drawFrom"),
         "drawTo": L.get("drawTo"),
