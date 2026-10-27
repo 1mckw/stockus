@@ -1,0 +1,45 @@
+name: Scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      index:
+        description: Universe
+        type: choice
+        options:
+          - both
+          - ndx100
+          - dji30
+        default: both
+      date:
+        description: As-of date YYYY-MM-DD (empty = UTC today)
+        required: false
+        default: ""
+  schedule:
+    # US cash close ~21:00 UTC; buffer for Yahoo
+    - cron: "30 22 * * 1-5"
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run scanner
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          INDEX="${{ github.event.inputs.index }}"
+          DATE="${{ github.event.inputs.date }}"
+          if [ -z "$INDEX" ]; then INDEX=both; fi
+          python scan.py --index "$INDEX" --date "$DATE" --sleep 0.3
+      - name: Upload chartpacks
+        uses: actions/upload-artifact@v4
+        with:
+          name: chartpacks
+          path: chartpacks/*.json
+          if-no-files-found: error
+          retention-days: 30
