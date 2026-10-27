@@ -1,0 +1,9 @@
+chartpacks/
+.cursor/
+.taste-skill/
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+.env
+*.log

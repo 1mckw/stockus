@@ -1,0 +1,2577 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>NDX100 日線掃描器 · 趨勢線 / Creek / Ice</title>
+<meta name="description" content="NDX100 / DJI30 成分股日線四點成線掃描器：向上／向下趨勢線、Creek、Ice 與平行通道，附逐日 Chartpack。" />
+<meta name="theme-color" content="#161618" />
+<meta name="color-scheme" content="dark" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="NDX 掃描" />
+<meta name="format-detection" content="telephone=no" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* ============================================================
+     NDX100 Scanner — data terminal
+     平面深色、單一藍色強調（只做 1px 選取線）、數字等寬
+     ============================================================ */
+  :root {
+    --ground: #161618;
+    --surface: #101114;
+    --surface-2: #17181c;
+    --raised: #1e2025;
+    --line: #282a30;
+    --line-strong: #3c3f47;
+    --rule: #202227;
+    --text: #f4f5f7;
+    --muted: #a2a6ae;
+    --dim: #7d828c;
+    --accent: #6ba6e8;
+    --accent-line: #4a8ad6;
+    --pos: #4faf8d;
+    --neg: #e5647c;
+    --warn: #d9a441;
+    --ice: #8ab4d9;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: "Public Sans", "Noto Sans TC", system-ui, -apple-system, sans-serif;
+    --r: 10px;
+    --r-sm: 6px;
+    --dur: 0.18s;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text);
+    background: var(--ground);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  ::selection { background: rgba(74, 138, 214, 0.35); color: #fff; }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    background: #2e3138;
+    border: 3px solid var(--surface);
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-thumb:hover { background: #3c4048; }
+
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .app {
+    height: 100dvh;
+    min-width: 0;
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  /* ---------- Header ---------- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--line);
+    background: var(--ground);
+    flex-shrink: 0;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .brand-mark {
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-sm);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    padding: 0 6px;
+    flex-shrink: 0;
+  }
+  .brand-mark span {
+    display: block;
+    height: 1px;
+    background: var(--muted);
+  }
+  .brand-mark span:nth-child(1) { width: 100%; background: var(--accent); }
+  .brand-mark span:nth-child(2) { width: 68%; }
+  .brand-mark span:nth-child(3) { width: 84%; }
+  .brand-text h1 {
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .brand-text h1 span { color: var(--muted); font-weight: 400; }
+  .brand-text p {
+    font-size: 11.5px;
+    color: var(--dim);
+    line-height: 1.3;
+    margin-top: 1px;
+    white-space: nowrap;
+  }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 0;
+  }
+  .tool-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 6px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--surface-2);
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 1px 6px 2px;
+    min-width: 0;
+  }
+  .field > span {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--dim);
+    line-height: 1.4;
+  }
+  .field input[type="date"],
+  .field select {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text);
+    background: transparent;
+    border: 0;
+    outline: none;
+    padding: 1px 0;
+    color-scheme: dark;
+    cursor: pointer;
+  }
+  .field input[type="date"] { min-width: 126px; }
+  .field select { min-width: 112px; max-width: 150px; }
+
+  button {
+    appearance: none;
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 500;
+    height: 32px;
+    padding: 0 14px;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      background var(--dur) ease,
+      border-color var(--dur) ease,
+      color var(--dur) ease,
+      opacity var(--dur) ease;
+  }
+  button:hover:not(:disabled) { background: var(--raised); border-color: #4b4f58; }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { opacity: 0.34; cursor: not-allowed; }
+  button:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+  button.primary {
+    border-color: var(--accent-line);
+    color: var(--accent);
+    background: rgba(74, 138, 214, 0.1);
+  }
+  button.primary:hover:not(:disabled) {
+    background: rgba(74, 138, 214, 0.18);
+    border-color: var(--accent);
+  }
+  button.ghost-danger:hover:not(:disabled) {
+    color: var(--neg);
+    border-color: var(--neg);
+    background: transparent;
+  }
+  button.is-busy { pointer-events: none; opacity: 0.6; }
+
+  /* ---------- Status strip ---------- */
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 20px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--surface);
+    font-size: 12px;
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+  .status-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--dim);
+    flex-shrink: 0;
+  }
+  body.is-scanning .status-dot {
+    background: var(--accent);
+    animation: pulseDot 1.2s ease-in-out infinite;
+  }
+  #statusText {
+    flex: 0 1 auto;
+    min-width: 190px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .progress {
+    flex: 1 1 auto;
+    min-width: 120px;
+    height: 3px;
+    background: var(--rule);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .progress > i {
+    display: block;
+    width: 0%;
+    height: 100%;
+    background: var(--accent-line);
+    border-radius: 999px;
+    transition: width 0.25s ease;
+  }
+  #statusCount {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    min-width: 54px;
+    text-align: right;
+  }
+
+  /* ---------- Main ---------- */
+  main {
+    display: grid;
+    grid-template-columns: 284px minmax(0, 1fr);
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-right: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .sidebar-head {
+    flex-shrink: 0;
+    padding: 14px 16px 11px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .head-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .sidebar-head h2 {
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  #listCount {
+    font-family: var(--mono);
+    font-style: normal;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  .filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 13px;
+  }
+  .filter-bar-label {
+    font-size: 11px;
+    color: var(--dim);
+    letter-spacing: 0.06em;
+  }
+  .filter-chips { display: flex; gap: 2px; }
+  .filter-chip {
+    position: relative;
+    height: 26px;
+    padding: 0 10px;
+    border: 1px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+  .filter-chip:hover:not(:disabled) {
+    background: var(--raised);
+    border-color: transparent;
+    color: var(--text);
+  }
+  .filter-chip.active { color: var(--text); }
+  .filter-chip.active::after {
+    content: "";
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 2px;
+    height: 1px;
+    background: var(--accent-line);
+  }
+  .filter-meta {
+    display: block;
+    margin-top: 9px;
+    font-size: 11.5px;
+    color: var(--dim);
+    line-height: 1.45;
+  }
+  .filter-meta strong {
+    color: var(--text);
+    font-weight: 500;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .list-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    padding: 7px 16px;
+    border-bottom: 1px solid var(--rule);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  #resultList {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  #resultList:empty::before {
+    content: "尚無結果";
+    display: block;
+    padding: 18px 16px;
+    font-size: 12px;
+    color: var(--dim);
+  }
+  .list-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    height: 42px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--rule);
+    cursor: pointer;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 13.5px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    outline: none;
+    transition: background var(--dur) ease, color var(--dur) ease;
+  }
+  .list-item:hover,
+  .list-item:focus-visible { background: var(--surface-2); color: var(--text); }
+  .list-item.active { background: var(--surface-2); color: var(--text); }
+  .list-item.active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--accent-line);
+  }
+  .list-item.err { opacity: 0.55; }
+  .list-item .sym { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
+  .list-item .tags {
+    display: flex;
+    gap: 8px;
+    flex: 0 0 auto;
+    font-family: var(--sans);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: var(--dim);
+  }
+  .tag { white-space: nowrap; }
+  .tag.is-break { color: var(--warn); }
+  .tag.is-touch { color: var(--ice); }
+  .tag.is-err { color: var(--dim); }
+
+  /* ---------- Viewer ---------- */
+  .viewer {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px 22px 26px;
+    background: var(--ground);
+  }
+  .viewer-toolbar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    flex-shrink: 0;
+    padding-bottom: 11px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 16px;
+  }
+  .title-block { min-width: 0; }
+  .title-block h2 {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+    color: var(--text);
+  }
+  .title-block p {
+    margin-top: 3px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+  .seg { display: flex; align-items: center; gap: 20px; flex-shrink: 0; }
+  .seg button {
+    position: relative;
+    height: 28px;
+    padding: 0 1px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .seg button:hover:not(:disabled) { background: transparent; color: var(--text); }
+  .seg button.active { color: var(--text); background: transparent; }
+  .seg button.active::after {
+    content: "";
+    position: absolute;
+    left: 1px;
+    right: 1px;
+    bottom: -12px;
+    height: 1px;
+    background: var(--accent-line);
+  }
+
+  .viewer-stage { position: relative; min-height: 320px; }
+  .view-pane {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(6px);
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
+  }
+  .view-pane.is-on {
+    position: relative;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: none;
+  }
+  .view-pane.is-exit {
+    opacity: 0;
+    transform: translateY(-4px);
+    visibility: hidden;
+  }
+
+  .chart-wrap {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    padding: 10px 12px 10px;
+    overflow: hidden;
+  }
+  .chart-wrap canvas { display: block; width: 100%; height: auto; }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px 22px;
+    margin-top: 8px;
+    padding: 11px 4px 2px;
+    border-top: 1px solid var(--rule);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .lg { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+  .lg::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--dot, var(--dim));
+    flex-shrink: 0;
+  }
+  .lg b { font-weight: 600; color: var(--text); white-space: nowrap; }
+  .lg em {
+    font-family: var(--mono);
+    font-style: normal;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .c-up { --dot: var(--pos); }
+  .c-down { --dot: var(--neg); }
+  .c-creek { --dot: var(--warn); }
+  .c-ice { --dot: var(--ice); }
+  .c-accent { --dot: var(--accent); }
+
+  /* ---------- Chartpack grid ---------- */
+  .pack-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(430px, 1fr));
+    gap: 16px;
+  }
+  .pack-card {
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    overflow: hidden;
+    cursor: pointer;
+    outline: none;
+    transition: border-color var(--dur) ease, background var(--dur) ease;
+  }
+  .pack-card:hover,
+  .pack-card:focus-visible {
+    border-color: var(--line-strong);
+    background: var(--surface-2);
+  }
+  .pack-card header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .pack-card header .pack-date {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--dim);
+    letter-spacing: 0.03em;
+  }
+  .pack-card header .tags {
+    display: flex;
+    gap: 8px;
+    font-family: var(--sans);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--dim);
+  }
+  .pack-card canvas { display: block; width: 100%; height: auto; }
+  .pack-card .info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 16px;
+    padding: 9px 14px 11px;
+    border-top: 1px solid var(--rule);
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .pack-card .info .lg b { font-size: 11.5px; }
+
+  /* ---------- Empty ---------- */
+  .empty {
+    max-width: 520px;
+    margin: 5vh auto 0;
+    padding: 28px 28px 30px;
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    background: var(--surface);
+  }
+  .empty-ico {
+    position: relative;
+    width: 40px;
+    height: 32px;
+    margin-bottom: 18px;
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+  }
+  .empty-ico::before {
+    content: "";
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    top: 9px;
+    height: 1px;
+    background: var(--muted);
+    box-shadow: 0 5px 0 var(--line-strong), 0 10px 0 var(--line);
+  }
+  .empty h3 {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  .empty p {
+    margin-top: 8px;
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--muted);
+  }
+  .empty code {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    background: var(--raised);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 6px;
+    white-space: nowrap;
+  }
+
+  /* ---------- Motion (subtle only) ---------- */
+  .is-swap { animation: fadeSwap 0.2s ease both; }
+  .filter-chip.is-pop,
+  .seg button.is-pop { animation: fadeSwap 0.2s ease both; }
+  #resultList.is-swap { animation: fadeSwap 0.2s ease both; }
+  .pack-card { animation: fadeSwap 0.24s ease both; }
+
+  @keyframes fadeSwap {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes pulseDot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 1220px) {
+    main { grid-template-columns: 248px minmax(0, 1fr); }
+    .brand-text p { display: none; }
+    .viewer { padding: 14px 16px 22px; }
+  }
+  @media (max-width: 980px) {
+    .app {
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
+    }
+    .topbar {
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px;
+    }
+    .toolbar { width: 100%; justify-content: flex-start; }
+    .tool-group { flex-wrap: wrap; }
+    .status {
+      display: grid;
+      grid-template-columns: 5px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 4px 10px;
+      padding: 8px 14px;
+    }
+    .status-dot { grid-column: 1; }
+    #statusText {
+      grid-column: 2 / 4;
+      min-width: 0;
+      white-space: normal;
+    }
+    .progress { grid-column: 1 / 3; min-width: 0; }
+    #statusCount { grid-column: 3; grid-row: 2; text-align: right; }
+    main {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    .sidebar {
+      order: 0;
+      max-height: none;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .viewer {
+      order: 1;
+      min-height: 0;
+      padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+    }
+    .viewer-stage { min-height: 240px; flex: 1; }
+    .pack-grid { grid-template-columns: minmax(0, 1fr); }
+    .title-block h2 { font-size: 17px; }
+    .list-head { display: none; }
+    .sidebar-head { padding: 10px 12px 8px; }
+    .filter-bar { margin-top: 8px; }
+    #resultList {
+      display: flex;
+      flex-direction: row;
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      scroll-snap-type: x proximity;
+      gap: 0;
+      padding: 0 6px 8px;
+    }
+    #resultList:empty::before { padding: 12px; }
+    .list-item {
+      flex: 0 0 auto;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      height: 52px;
+      min-width: 88px;
+      padding: 6px 12px;
+      border-bottom: 0;
+      border-right: 1px solid var(--rule);
+      scroll-snap-align: start;
+    }
+    .list-item.active::before {
+      top: auto;
+      bottom: 0;
+      right: 0;
+      width: auto;
+      height: 2px;
+    }
+    .list-item .tags { gap: 6px; font-size: 10px; }
+    button, .filter-chip, .seg button {
+      min-height: 44px;
+      padding-left: 14px;
+      padding-right: 14px;
+    }
+    .filter-chip { height: 36px; border-radius: 999px; }
+    .filter-chip.active::after { display: none; }
+    .filter-chip.active {
+      border-color: var(--line-strong);
+      background: var(--raised);
+    }
+    .seg { gap: 8px; }
+    .seg button.active::after { bottom: 6px; }
+    .field input[type="date"],
+    .field select { font-size: 16px; min-height: 28px; }
+  }
+  @media (max-width: 560px) {
+    .brand-text h1 { font-size: 16px; }
+    .brand-mark { width: 26px; height: 26px; }
+    .topbar { gap: 8px; padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 8px; }
+    .tool-group {
+      width: 100%;
+      justify-content: space-between;
+    }
+    .tool-group button { flex: 1 1 auto; }
+    .field input[type="date"] { min-width: 118px; }
+    .field select { min-width: 96px; max-width: none; }
+    .viewer-toolbar {
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+    }
+    .title-block h2 { font-size: 16px; }
+    .empty { margin: 4vh auto 0; padding: 18px 16px; }
+  }
+
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="brand-text">
+        <h1>NDX100 <span>掃描器</span></h1>
+        <p>日線 · 四點成線 · 趨勢線 / Creek / Ice</p>
+      </div>
+    </div>
+    <div class="toolbar">
+      <div class="tool-group" aria-label="存檔">
+        <label class="field"><span>日期</span>
+          <input type="date" id="packDate" />
+        </label>
+        <label class="field"><span>已存</span>
+          <select id="savedPacks" title="已保存的 Chartpack">
+            <option value="">— 無 —</option>
+          </select>
+        </label>
+        <button type="button" id="btnOpen" disabled>開啟</button>
+        <button type="button" id="btnSave" disabled>保存</button>
+      </div>
+      <div class="tool-group" aria-label="掃描">
+        <label class="field"><span>指數</span>
+          <select id="indexSelect" title="成分股清單">
+            <option value="ndx100">NDX100</option>
+            <option value="dji30">DJI30</option>
+          </select>
+        </label>
+        <button type="button" id="btnScan" class="primary">開始掃描</button>
+        <button type="button" id="btnStop" class="ghost-danger" disabled>停止</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="status" role="status">
+    <span class="status-dot" aria-hidden="true"></span>
+    <span id="statusText">就緒 — 選擇日期後開始掃描</span>
+    <div class="progress" aria-hidden="true"><i id="progressBar"></i></div>
+    <span id="statusCount"></span>
+  </div>
+
+  <main>
+    <aside class="sidebar" aria-label="掃描結果">
+      <div class="sidebar-head">
+        <div class="head-row">
+          <h2>掃描結果</h2>
+          <em id="listCount">0 檔</em>
+        </div>
+        <div class="filter-bar" aria-label="篩選條件">
+          <span class="filter-bar-label">篩選</span>
+          <div class="filter-chips" role="group">
+            <button type="button" class="filter-chip" id="filterBreakout" data-filter="breakout" aria-pressed="false">突破</button>
+            <button type="button" class="filter-chip" id="filterTouch" data-filter="touch" aria-pressed="false">觸碰</button>
+          </div>
+        </div>
+        <span class="filter-meta" id="filterMeta">顯示全部</span>
+      </div>
+      <div class="list-head" aria-hidden="true"><span>代號</span><span>近 5 根訊號</span></div>
+      <div id="resultList"></div>
+    </aside>
+
+    <section class="viewer" id="viewer">
+      <div class="viewer-toolbar">
+        <div class="title-block" id="titleBlock">
+          <h2 id="viewerTitle">圖表區</h2>
+          <p id="viewerSub">選左側代號檢視單圖，或切換 Chartpack</p>
+        </div>
+        <div class="seg" role="group" aria-label="檢視">
+          <button type="button" id="btnSingle" disabled>單圖</button>
+          <button type="button" id="btnPack" disabled>Chartpack</button>
+        </div>
+      </div>
+      <div class="viewer-stage">
+        <div class="empty view-pane is-on" id="emptyHint">
+          <div class="empty-ico" aria-hidden="true"></div>
+          <h3>還沒有圖表</h3>
+          <p>先執行 <code>python server.py</code> 並開啟本頁，選好日期後按「開始掃描」；或從右上「已存」開啟歷史 Chartpack。</p>
+        </div>
+        <div id="singleView" class="view-pane">
+          <div class="chart-wrap">
+            <canvas id="mainCanvas" width="1200" height="672"></canvas>
+            <div class="legend" id="mainLegend"></div>
+          </div>
+        </div>
+        <div id="packView" class="pack-grid view-pane"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+/* ========== 成分股 fallback ========== */
+const NDX100_FALLBACK = [
+  "AAPL","ABNB","ADBE","ADI","ADP","ADSK","AEP","ALAB","ALNY","AMAT","AMD","AMGN","AMZN","APP",
+  "ARM","ASML","AVGO","AXON","BKR","BKNG","CCEP","CDNS","CEG","CMCSA","COST","CPRT","CRWD","CRWV",
+  "CSCO","CSX","CTAS","DASH","DDOG","DXCM","EXC","FANG","FAST","FER","FTNT","GEHC","GILD","GOOG",
+  "GOOGL","HON","HONA","IDXX","INTC","INTU","ISRG","KDP","KLAC","LIN","LITE","LRCX","MAR","MCHP",
+  "MDLZ","MELI","META","MNST","MPWR","MRNA","MRVL","MSFT","MSTR","MU","NBIS","NFLX","NVDA","NXPI",
+  "ODFL","ORLY","PANW","PAYX","PCAR","PDD","PEP","PLTR","PYPL","QCOM","REGN","RKLB","ROP","ROST",
+  "SBUX","SHOP","SNDK","SNPS","STX","TER","TMUS","TRI","TSLA","TTWO","TXN","VRTX","WDAY","WDC",
+  "WMT","XEL"
+];
+
+/** 道瓊 30（2025-11 · NVDA 取代 INTC、AMZN 取代 WBA） */
+const DJI30_FALLBACK = [
+  "AAPL","AMGN","AMZN","AXP","BA","CAT","CRM","CSCO","CVX","DIS",
+  "DOW","GS","HD","HON","IBM","JNJ","JPM","KO","MCD","MMM",
+  "MRK","MSFT","NKE","NVDA","PG","TRV","UNH","V","VZ","WMT"
+];
+
+const INDEXES = {
+  ndx100: {
+    label: "NDX100",
+    fallback: NDX100_FALLBACK,
+    apiPath: "/api/ndx100",
+    minRows: 50
+  },
+  dji30: {
+    label: "DJI30",
+    fallback: DJI30_FALLBACK,
+    apiPath: "/api/dji30",
+    minRows: 25
+  }
+};
+
+const CFG = {
+  pivotLeft: 3,
+  pivotRight: 3,
+  touchTolPct: 0.0045,       // 0.45% of price
+  touchMergeBars: 5,         // 相鄰 ≤5 根內的觸點合併為 1
+  maxTouchGapBars: 120,      // 相鄰觸點間隔不得超過 120 根 K
+  recentTouchBars: 60,       // 至少一觸點須落在最新 60 根內
+  maxBodyBreaks: 5,
+  horizSlopePct: 0.015,      // |m|*bars / midPrice < 1.5% → near horizontal
+  minTouches: 4,
+  windows: [200, 300, 400, 500, 600, 800, 1000], // 做線視窗（由小到大）
+  chartWindow: 600, // 圖表固定顯示根數
+  colors: {
+    bg: "#0e0f12",
+    grid: "#20232a",
+    text: "#a2a6ae",
+    textStrong: "#f4f5f7",
+    up: "#4faf8d",
+    down: "#e5647c",
+    tlUp: "#4faf8d",
+    tlDown: "#e5647c",
+    creek: "#d9a441",
+    ice: "#8ab4d9",
+    wick: "#8b909a",
+    accent: "#6ba6e8"
+  }
+};
+
+/* ========== State ========== */
+const state = {
+  index: "ndx100",
+  symbols: [...NDX100_FALLBACK],
+  results: [],
+  cache: {},          // symbol → 完整日線（未截斷）
+  selected: null,
+  stop: false,
+  packDate: "",
+  view: "single",
+  filters: { breakout: false, touch: false }
+};
+
+function currentIndexConfig() {
+  return INDEXES[state.index] || INDEXES.ndx100;
+}
+
+function syncIndexUi() {
+  const cfg = currentIndexConfig();
+  const h1 = document.querySelector(".brand-text h1");
+  if (h1) h1.innerHTML = `${cfg.label} <span>掃描器</span>`;
+  document.title = `${cfg.label} 日線掃描器 · 趨勢線 / Creek / Ice`;
+  const sel = $("indexSelect");
+  if (sel && sel.value !== state.index) sel.value = state.index;
+}
+
+function todayISO() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** 截斷至選定日期當日收盤（含） */
+function barsAsOf(bars, dateStr) {
+  if (!dateStr || !bars?.length) return bars || [];
+  const end = new Date(dateStr + "T23:59:59").getTime();
+  return bars.filter(b => b.t <= end);
+}
+
+/* ========== Data fetch (prefer local server.py proxy) ========== */
+const LOCAL_BASE = (() => {
+  const { protocol, hostname, port } = location;
+  if (protocol === "http:" || protocol === "https:") {
+    if (hostname === "127.0.0.1" || hostname === "localhost") return "";
+  }
+  return "http://127.0.0.1:8765";
+})();
+
+function medianGapDays(bars) {
+  if (!bars || bars.length < 3) return Infinity;
+  const gaps = [];
+  for (let i = 1; i < bars.length; i++) {
+    gaps.push((bars[i].t - bars[i - 1].t) / 86400000);
+  }
+  gaps.sort((a, b) => a - b);
+  return gaps[Math.floor(gaps.length / 2)];
+}
+
+/** Yahoo range=max 常降採樣成週/月/季；只接受近似日線 */
+function isDailyBars(bars, metaGran) {
+  if (metaGran && metaGran !== "1d") return false;
+  return medianGapDays(bars) <= 5;
+}
+
+function parseYahooBars(json) {
+  const r = json?.chart?.result?.[0];
+  if (!r) throw new Error("no result");
+  const gran = r.meta?.dataGranularity;
+  const ts = r.timestamp || [];
+  const q = r.indicators?.quote?.[0] || {};
+  const bars = [];
+  for (let i = 0; i < ts.length; i++) {
+    const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i];
+    const v = q.volume?.[i];
+    if ([o, h, l, c].some(x => x == null || Number.isNaN(x))) continue;
+    bars.push({
+      t: ts[i] * 1000,
+      o: +o, h: +h, l: +l, c: +c,
+      v: v == null ? 0 : +v
+    });
+  }
+  if (bars.length < 50) throw new Error("too few bars");
+  if (!isDailyBars(bars, gran)) {
+    throw new Error(`非日線資料（gran=${gran || "?"} gap≈${medianGapDays(bars).toFixed(1)}d）`);
+  }
+  return bars;
+}
+
+async function fetchIndexSymbols() {
+  const cfg = currentIndexConfig();
+  const urls =
+    state.index === "ndx100"
+      ? [
+          `${LOCAL_BASE}${cfg.apiPath}`,
+          "https://api.allorigins.win/raw?url=" + encodeURIComponent("https://api.nasdaq.com/api/quote/list-type/nasdaq100"),
+          "https://corsproxy.io/?" + encodeURIComponent("https://api.nasdaq.com/api/quote/list-type/nasdaq100")
+        ]
+      : [`${LOCAL_BASE}${cfg.apiPath}`];
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!res.ok) continue;
+      const json = await res.json();
+      if (state.index === "dji30") {
+        const syms = json?.symbols;
+        if (Array.isArray(syms) && syms.length >= cfg.minRows) {
+          return syms.map(s => String(s).toUpperCase()).filter(Boolean).sort();
+        }
+        continue;
+      }
+      const rows = json?.data?.data?.rows;
+      if (Array.isArray(rows) && rows.length >= cfg.minRows) {
+        return rows.map(r => r.symbol).filter(Boolean).sort();
+      }
+    } catch (_) { /* try next */ }
+  }
+  return [...cfg.fallback];
+}
+
+async function fetchDailyBars(symbol) {
+  // 勿用 range=max：Yahoo 會改成週/月/季線。10y/5y 可維持 interval=1d。
+  const ranges = ["10y", "5y"];
+  let lastErr = null;
+  for (const range of ranges) {
+    const urls = [
+      `${LOCAL_BASE}/api/chart?symbol=${encodeURIComponent(symbol)}&range=${range}`,
+      "https://corsproxy.io/?" + encodeURIComponent(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=${range}&includePrePost=false`
+      )
+    ];
+    for (const url of urls) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const json = await res.json();
+        if (json?.error) throw new Error(json.error);
+        return parseYahooBars(json);
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+  }
+  throw lastErr || new Error("fetch failed");
+}
+
+/* ========== Pivots ========== */
+function findPivots(bars, left, right) {
+  const highs = [];
+  const lows = [];
+  const n = bars.length;
+  for (let i = left; i < n - right; i++) {
+    let isH = true, isL = true;
+    for (let j = i - left; j <= i + right; j++) {
+      if (j === i) continue;
+      if (bars[j].h >= bars[i].h) isH = false;
+      if (bars[j].l <= bars[i].l) isL = false;
+    }
+    if (isH) highs.push(i);
+    if (isL) lows.push(i);
+  }
+  return { highs, lows };
+}
+
+function lineThrough(i1, p1, i2, p2) {
+  const m = (p2 - p1) / (i2 - i1);
+  const b = p1 - m * i1;
+  return { m, b };
+}
+function yAt(line, i) { return line.m * i + line.b; }
+
+function bodyTop(bar) { return Math.max(bar.o, bar.c); }
+function bodyBot(bar) { return Math.min(bar.o, bar.c); }
+
+/**
+ * 取相鄰間隔 ≤ maxTouchGapBars 的連續觸點段；
+ * 優先選「有觸點落在 recentFrom 之後」的最長段（連接最新 K）。
+ */
+function compactTouchesByGap(touches, recentFrom) {
+  if (!touches?.length) return [];
+  const maxGap = CFG.maxTouchGapBars;
+  const segments = [];
+  let cur = [touches[0]];
+  for (let i = 1; i < touches.length; i++) {
+    if (touches[i] - touches[i - 1] <= maxGap) {
+      cur.push(touches[i]);
+    } else {
+      segments.push(cur);
+      cur = [touches[i]];
+    }
+  }
+  segments.push(cur);
+
+  const needRecent = recentFrom != null;
+  const pool = needRecent
+    ? segments.filter(seg => seg.some(i => i >= recentFrom))
+    : segments;
+  if (!pool.length) return [];
+  pool.sort((a, b) => b.length - a.length);
+  return pool[0];
+}
+
+/**
+ * Evaluate a candidate line on bars[start..end)
+ * kind: "support" (upward / creek) or "resistance" (downward / ice)
+ * 實體完全穿越才算突破；僅引線穿越不計突破、可當觸點。
+ * 實體突破數只從「第一個觸點」起算（線成形後），允許最多 maxBodyBreaks。
+ */
+function evaluateLine(bars, start, line, kind, pivots) {
+  const n = bars.length;
+  const touches = [];
+  let bodyBreaks = 0;
+  let formed = false; // 至少一觸點後才累計實體突破
+
+  for (let i = start; i < n; i++) {
+    const y = yAt(line, i);
+    const bar = bars[i];
+    const tol = Math.abs(y) * CFG.touchTolPct;
+    const bt = bodyTop(bar);
+    const bb = bodyBot(bar);
+
+    if (kind === "support") {
+      // Body fully below line → breakthrough（僅成形後計入；引線破可不計）
+      if (bt < y - tol) {
+        if (formed) bodyBreaks++;
+        continue;
+      }
+      // Touch: low near line, or wick through but body holds above
+      const wickTouch = bar.l <= y + tol && bt >= y - tol;
+      const nearLow = Math.abs(bar.l - y) <= tol;
+      const pivotTouch = pivots.includes(i) && bar.l <= y + tol * 2 && bb >= y - tol * 3;
+      if (wickTouch || nearLow || pivotTouch) {
+        // 相鄰 touchMergeBars 根內只算 1 觸點，保留更貼線者
+        const merge = CFG.touchMergeBars;
+        if (!touches.length || i - touches[touches.length - 1] >= merge) {
+          touches.push(i);
+        } else {
+          const prev = touches[touches.length - 1];
+          if (Math.abs(bar.l - y) < Math.abs(bars[prev].l - yAt(line, prev))) {
+            touches[touches.length - 1] = i;
+          }
+        }
+        formed = true;
+      }
+    } else {
+      // resistance: body fully above → breakthrough
+      if (bb > y + tol) {
+        if (formed) bodyBreaks++;
+        continue;
+      }
+      const wickTouch = bar.h >= y - tol && bb <= y + tol;
+      const nearHigh = Math.abs(bar.h - y) <= tol;
+      const pivotTouch = pivots.includes(i) && bar.h >= y - tol * 2 && bt <= y + tol * 3;
+      if (wickTouch || nearHigh || pivotTouch) {
+        const merge = CFG.touchMergeBars;
+        if (!touches.length || i - touches[touches.length - 1] >= merge) {
+          touches.push(i);
+        } else {
+          const prev = touches[touches.length - 1];
+          if (Math.abs(bar.h - y) < Math.abs(bars[prev].h - yAt(line, prev))) {
+            touches[touches.length - 1] = i;
+          }
+        }
+        formed = true;
+      }
+    }
+  }
+
+  // 間隔 ≤120，且至少一點落在最新 recentTouchBars 根內
+  const recentFrom = Math.max(0, n - CFG.recentTouchBars);
+  const kept = compactTouchesByGap(touches, recentFrom);
+  // 以壓縮後觸點重算實體突破（避免合併前誤計）
+  let recount = 0;
+  if (kept.length) {
+    const from = kept[0];
+    for (let i = from; i < n; i++) {
+      const y = yAt(line, i);
+      const tol = Math.abs(y) * CFG.touchTolPct;
+      if (kind === "support") {
+        if (bodyTop(bars[i]) < y - tol) recount++;
+      } else if (bodyBot(bars[i]) > y + tol) {
+        recount++;
+      }
+    }
+  }
+  return {
+    touches: kept,
+    bodyBreaks: recount,
+    valid: kept.length >= CFG.minTouches && recount <= CFG.maxBodyBreaks
+  };
+}
+
+function isNearHorizontal(line, bars, start) {
+  const mid = bars[Math.floor((start + bars.length - 1) / 2)];
+  const midP = (mid.h + mid.l) / 2;
+  const span = bars.length - 1 - start;
+  const drift = Math.abs(line.m) * span;
+  return drift / midP < CFG.horizSlopePct;
+}
+
+function evaluateHorizontal(bars, start, price, kind, pivots) {
+  return evaluateLine(bars, start, { m: 0, b: price }, kind, pivots);
+}
+
+/** 將接近水平的斜線標成 Creek（支撐）／Ice（壓力），必要時改為真水平線 */
+function applyCreekOrIce(candidate, bars, start, kind, pivots) {
+  const horizName = kind === "support" ? "creek" : "ice";
+  const horizLabel = kind === "support" ? "Creek" : "Ice";
+  const touchPrices = candidate.touches.map(i =>
+    kind === "support" ? bars[i].l : bars[i].h
+  );
+  touchPrices.sort((x, y) => x - y);
+  const med = touchPrices[Math.floor(touchPrices.length / 2)];
+  const horiz = evaluateHorizontal(bars, start, med, kind, pivots);
+
+  if (horiz.valid && horiz.touches.length >= candidate.touches.length) {
+    candidate.line = { m: 0, b: med };
+    candidate.touches = horiz.touches;
+    candidate.bodyBreaks = horiz.bodyBreaks;
+    candidate.drawFrom = horiz.touches[0];
+    candidate.drawTo = horiz.touches[horiz.touches.length - 1];
+    candidate.score = horiz.touches.length * 10 - horiz.bodyBreaks * 3 + 5;
+  }
+  candidate.label = horizLabel;
+  candidate.type = horizName;
+  return candidate;
+}
+
+/**
+ * 純水平 Creek / Ice：在視窗內以樞軸價位枚舉水平線（四點、實體破≤5）。
+ * 規則：1000K 趨勢線接近水平（或斜線不成）時採用。
+ */
+function findBestHorizontal(bars, windowSize, kind) {
+  const n = bars.length;
+  const start = Math.max(0, n - windowSize);
+  const { highs, lows } = findPivots(bars, CFG.pivotLeft, CFG.pivotRight);
+  const pivots = (kind === "support" ? lows : highs).filter(i => i >= start);
+  if (pivots.length < CFG.minTouches) return null;
+
+  const prices = [];
+  for (const i of pivots) {
+    const p = kind === "support" ? bars[i].l : bars[i].h;
+    if (!Number.isFinite(p)) continue;
+    // 合併近似價位（0.15%）
+    const hit = prices.find(x => Math.abs(x - p) / p < 0.0015);
+    if (!hit) prices.push(p);
+  }
+
+  let best = null;
+  const horizName = kind === "support" ? "creek" : "ice";
+  const horizLabel = kind === "support" ? "Creek" : "Ice";
+
+  for (const price of prices) {
+    const ev = evaluateHorizontal(bars, start, price, kind, pivots);
+    if (!ev.valid) continue;
+    const score = ev.touches.length * 10 - ev.bodyBreaks * 3 + 8;
+    if (!best || score > best.score) {
+      best = {
+        kind,
+        line: { m: 0, b: price },
+        touches: ev.touches,
+        bodyBreaks: ev.bodyBreaks,
+        start,
+        drawFrom: ev.touches[0],
+        drawTo: ev.touches[ev.touches.length - 1],
+        windowSize,
+        score,
+        label: horizLabel,
+        type: horizName
+      };
+    }
+  }
+  return best;
+}
+
+/**
+ * Search best support (up) or resistance (down) line in window.
+ * forceHoriz：1000K 時若近水平，強制改 Creek/Ice；不成斜線則搜純水平。
+ */
+function findBestLine(bars, windowSize, kind, opts = {}) {
+  const forceHoriz = !!opts.forceHoriz;
+  const n = bars.length;
+  const start = Math.max(0, n - windowSize);
+  const { highs, lows } = findPivots(bars, CFG.pivotLeft, CFG.pivotRight);
+  const pivots = (kind === "support" ? lows : highs).filter(i => i >= start);
+
+  if (pivots.length < 3) {
+    return forceHoriz ? findBestHorizontal(bars, windowSize, kind) : null;
+  }
+
+  let best = null;
+
+  // Enumerate pivot pairs as anchors, score by touches
+  for (let a = 0; a < pivots.length - 1; a++) {
+    for (let b = a + 1; b < pivots.length; b++) {
+      const i1 = pivots[a], i2 = pivots[b];
+      if (i2 - i1 < 5) continue;
+      const p1 = kind === "support" ? bars[i1].l : bars[i1].h;
+      const p2 = kind === "support" ? bars[i2].l : bars[i2].h;
+      const line = lineThrough(i1, p1, i2, p2);
+
+      // Direction filter
+      if (kind === "support" && line.m < -1e-9) continue;   // must be flat or rising
+      if (kind === "resistance" && line.m > 1e-9) continue; // must be flat or falling
+
+      // 從第一錨點起評分（線成形前的穿越不計）
+      const ev = evaluateLine(bars, Math.min(i1, i2), line, kind, pivots);
+      if (!ev.valid) continue;
+
+      const score = ev.touches.length * 10 - ev.bodyBreaks * 3 + (i2 - i1) * 0.01;
+
+      const candidate = {
+        kind,
+        line,
+        touches: ev.touches,
+        bodyBreaks: ev.bodyBreaks,
+        start,
+        drawFrom: ev.touches[0],
+        drawTo: ev.touches[ev.touches.length - 1],
+        windowSize,
+        score,
+        label: kind === "support" ? "向上趨勢線" : "向下趨勢線",
+        type: kind === "support" ? "uptrend" : "downtrend"
+      };
+
+      // 近水平 → Creek / Ice；1000K 用略寬判定也改標
+      const nearH = isNearHorizontal(line, bars, start);
+      const nearH1000 = forceHoriz && (() => {
+        const midP = ((bars[start].h + bars[start].l) / 2) || 1;
+        const drift = Math.abs(line.m) * (n - 1 - start);
+        return drift / midP < CFG.horizSlopePct * 1.5;
+      })();
+      if (nearH || nearH1000) {
+        applyCreekOrIce(candidate, bars, Math.min(i1, i2), kind, pivots);
+      }
+
+      if (!best || candidate.score > best.score) best = candidate;
+    }
+  }
+
+  // 1000K：斜線不成或結果已近水平 → 再比純水平 Creek/Ice
+  if (forceHoriz) {
+    const horiz = findBestHorizontal(bars, windowSize, kind);
+    if (horiz && (!best || horiz.score >= (best.score || 0) || best.type === "creek" || best.type === "ice")) {
+      if (!best || horiz.score > best.score) best = horiz;
+      else if (best && (best.type === "uptrend" || best.type === "downtrend") && isNearHorizontal(best.line, bars, start)) {
+        best = horiz;
+      }
+    }
+    if (best && (best.type === "uptrend" || best.type === "downtrend") && isNearHorizontal(best.line, bars, start)) {
+      applyCreekOrIce(best, bars, start, kind, pivots);
+    }
+  }
+
+  return best;
+}
+
+function analyzeSymbol(bars, mode) {
+  const windows = mode === "auto"
+    ? CFG.windows
+    : [parseInt(mode, 10)].filter(Boolean);
+
+  let up = null, down = null;
+  let usedWindow = null;
+
+  // 由小到大：200 → 300 → …；不成線才擴大。1000K 近水平強制 Creek/Ice。
+  for (const w of windows) {
+    if (bars.length < Math.min(w, 80)) continue;
+    const forceHoriz = w >= 1000;
+    if (!up) up = findBestLine(bars, w, "support", { forceHoriz });
+    if (!down) down = findBestLine(bars, w, "resistance", { forceHoriz });
+    if (up && down) {
+      usedWindow = w;
+      break;
+    }
+    if (!usedWindow && (up || down)) usedWindow = w;
+  }
+
+  // 若只找到一邊，繼續擴大找另一邊
+  if ((!up || !down) && mode === "auto") {
+    for (const w of CFG.windows) {
+      const forceHoriz = w >= 1000;
+      if (!up) up = findBestLine(bars, w, "support", { forceHoriz });
+      if (!down) down = findBestLine(bars, w, "resistance", { forceHoriz });
+      if (up && down) {
+        usedWindow = Math.max(usedWindow || 0, w);
+        break;
+      }
+    }
+  }
+
+  // 1000K 仍缺線 → 最後一次純水平備援
+  if ((!up || !down) && mode === "auto") {
+    if (!up) up = findBestHorizontal(bars, 1000, "support");
+    if (!down) down = findBestHorizontal(bars, 1000, "resistance");
+    if ((up || down) && !usedWindow) usedWindow = 1000;
+  }
+
+  // 單線 → 平行通道（對側同規則：四點成線、實體破≤5、引線可計觸點）
+  let channel = null;
+  const primary = up && !down ? up : (!up && down ? down : null);
+  if (primary) channel = makeParallelChannel(primary, bars);
+
+  return { up, down, channel, window: usedWindow, bars };
+}
+
+/**
+ * 由單線生成平行通道對側：同斜率，對側樞軸枚舉，
+ * 須通過 evaluateLine（≥4 觸點、實體突破 ≤5）。
+ */
+function makeParallelChannel(L, bars) {
+  if (!L?.touches?.length) return null;
+  const n = bars.length;
+  const evalStart = L.start ?? L.drawFrom ?? L.touches[0];
+  const i0 = L.drawFrom ?? L.touches[0];
+  if (i0 >= n - 1) return null;
+
+  const oppKind = L.kind === "support" ? "resistance" : "support";
+  const { highs, lows } = findPivots(bars, CFG.pivotLeft, CFG.pivotRight);
+  const pivots = (oppKind === "support" ? lows : highs).filter(i => i >= evalStart);
+  const m = L.line.m;
+
+  let best = null;
+
+  // 候選：對側樞軸作錨點（同斜率平行線）
+  const tryCandidate = (line, scoreBonus = 0) => {
+    // 通道必須在主線外側
+    const mid = Math.floor((i0 + n - 1) / 2);
+    const primaryY = yAt(L.line, mid);
+    const candY = yAt(line, mid);
+    if (L.kind === "support" && candY <= primaryY + 1e-9) return;
+    if (L.kind === "resistance" && candY >= primaryY - 1e-9) return;
+
+    const ev = evaluateLine(bars, evalStart, line, oppKind, pivots);
+    if (!ev.valid) return;
+    const score = ev.touches.length * 10 - ev.bodyBreaks * 3 + scoreBonus;
+    if (!best || score > best.score) {
+      best = {
+        kind: oppKind,
+        line,
+        touches: ev.touches,
+        bodyBreaks: ev.bodyBreaks,
+        drawFrom: Math.min(i0, ev.touches[0]),
+        drawTo: n - 1,
+        start: evalStart,
+        windowSize: L.windowSize,
+        score,
+        label: "平行通道",
+        type: "channel",
+        isParallel: true,
+        pairOf: L.type
+      };
+    }
+  };
+
+  for (const i of pivots) {
+    if (i < i0) continue;
+    const price = oppKind === "support" ? bars[i].l : bars[i].h;
+    tryCandidate({ m, b: price - m * i });
+  }
+
+  // 備援：區間內對側極值貼齊（仍須通過四點／突破規則）
+  let extremeOffset = -Infinity;
+  let extremeI = i0;
+  for (let i = i0; i < n; i++) {
+    const y = yAt(L.line, i);
+    const offset = L.kind === "support" ? bars[i].h - y : y - bars[i].l;
+    if (offset > extremeOffset) { extremeOffset = offset; extremeI = i; }
+  }
+  if (extremeOffset > 0) {
+    const line = L.kind === "support"
+      ? { m, b: L.line.b + extremeOffset }
+      : { m, b: L.line.b - extremeOffset };
+    tryCandidate(line, 1);
+  }
+
+  return best;
+}
+
+/* ========== Chart drawing ========== */
+const FONT_MONO = '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
+const FONT_SANS = '"Public Sans", "Noto Sans TC", system-ui, sans-serif';
+
+function fmtPrice(p) {
+  if (!Number.isFinite(p)) return "—";
+  if (Math.abs(p) >= 1000) return p.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  if (Math.abs(p) >= 100) return p.toFixed(1);
+  return p.toFixed(2);
+}
+
+function fmtDate(ts) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function lineColorOf(L, c) {
+  if (L.type === "channel") return c.accent;
+  if (L.type === "creek") return c.creek;
+  if (L.type === "ice") return c.ice;
+  if (L.type === "uptrend") return c.tlUp;
+  return c.tlDown;
+}
+
+function lineNameOf(L) {
+  if (L.type === "channel") return "通道";
+  if (L.type === "creek") return "Creek";
+  if (L.type === "ice") return "Ice";
+  if (L.type === "uptrend") return "趨勢線↑";
+  return "趨勢線↓";
+}
+
+/**
+ * Draw one daily chart on a canvas, sized from its rendered width.
+ * opts: { date, compact, window }
+ */
+function drawChart(canvas, bars, analysis, symbol, opts = {}) {
+  if (!canvas || !bars || !bars.length) return;
+  const c = CFG.colors;
+  const compact = !!opts.compact;
+
+  const cssW = Math.max(
+    260,
+    Math.round(canvas.clientWidth || canvas.parentElement?.clientWidth || (compact ? 460 : 900))
+  );
+  const ratio = compact ? (cssW < 520 ? 0.62 : 0.54) : 0.56;
+  let cssH = Math.round(cssW * ratio);
+  const mobile = window.matchMedia("(max-width: 980px)").matches;
+  if (compact) {
+    cssH = Math.max(180, cssH);
+  } else if (mobile) {
+    const cap = Math.round((window.visualViewport?.height || window.innerHeight) * 0.44);
+    cssH = Math.max(220, Math.min(cssH, cap));
+  } else {
+    cssH = Math.max(360, cssH);
+  }
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+  canvas.style.height = cssH + "px";
+
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  const win = Math.min(bars.length, opts.window || (compact ? 260 : (CFG.chartWindow || 600)));
+  const start = Math.max(0, bars.length - win);
+  const view = bars.slice(start);
+  const n = view.length;
+  if (!n) return;
+
+  const pad = compact
+    ? { t: 12, r: 54, b: 21, l: 6 }
+    : { t: 52, r: 68, b: 34, l: 8 };
+
+  const lineObjs = [analysis?.up, analysis?.down, analysis?.channel].filter(L => L?.line);
+
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const b of view) {
+    lo = Math.min(lo, b.l);
+    hi = Math.max(hi, b.h);
+  }
+  for (const L of lineObjs) {
+    const a = Math.max(start, L.drawFrom ?? L.touches?.[0] ?? start);
+    for (let i = a; i <= start + n - 1; i++) {
+      const y = yAt(L.line, i);
+      if (Number.isFinite(y)) {
+        lo = Math.min(lo, y);
+        hi = Math.max(hi, y);
+      }
+    }
+  }
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return;
+  const span = hi - lo || Math.abs(hi) * 0.02 || 1;
+  lo -= span * 0.07;
+  hi += span * 0.07;
+
+  const left = pad.l;
+  const top = pad.t;
+  const pw = cssW - pad.l - pad.r;
+  const ph = cssH - pad.t - pad.b;
+  const xAt = i => left + ((i + 0.5) / n) * pw;
+  const yPx = p => top + ((hi - p) / (hi - lo)) * ph;
+  const candleW = Math.max(1.1, Math.min(9, (pw / n) * 0.62));
+  const mono = (size, weight = 500) => `${weight} ${size}px ${FONT_MONO}`;
+  const sans = (size, weight = 400) => `${weight} ${size}px ${FONT_SANS}`;
+  const labelSize = compact ? 9.5 : 10.5;
+
+  ctx.fillStyle = c.bg;
+  ctx.fillRect(0, 0, cssW, cssH);
+
+  /* y grid + price labels (right side) */
+  const rows = compact ? 4 : 5;
+  for (let g = 0; g <= rows; g++) {
+    const y = Math.round(top + (ph * g) / rows) + 0.5;
+    ctx.strokeStyle = c.grid;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(left, y);
+    ctx.lineTo(left + pw, y);
+    ctx.stroke();
+
+    const price = hi - ((hi - lo) * g) / rows;
+    ctx.font = mono(compact ? 10 : 11);
+    ctx.fillStyle = c.text;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(fmtPrice(price), left + pw + 8, y);
+  }
+
+  /* x labels + ticks (with faint vertical guides) */
+  const tickCount = compact ? 3 : (cssW < 620 ? 4 : 6);
+  ctx.font = mono(compact ? 9.5 : 10.5);
+  ctx.textBaseline = "top";
+  for (let k = 0; k < tickCount; k++) {
+    const idx = Math.round((k / (tickCount - 1)) * (n - 1));
+    const x = Math.round(xAt(idx)) + 0.5;
+    ctx.strokeStyle = c.grid;
+    ctx.lineWidth = 1;
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, top + ph);
+    ctx.stroke();
+    ctx.restore();
+    ctx.beginPath();
+    ctx.moveTo(x, top + ph);
+    ctx.lineTo(x, top + ph + 4);
+    ctx.stroke();
+
+    ctx.fillStyle = c.text;
+    ctx.textAlign = k === 0 ? "left" : k === tickCount - 1 ? "right" : "center";
+    ctx.fillText(fmtDate(view[idx].t), x, top + ph + 7);
+  }
+
+  /* candles */
+  for (let i = 0; i < n; i++) {
+    const b = view[i];
+    const x = Math.round(xAt(i)) + 0.5;
+    const up = b.c >= b.o;
+    const color = up ? c.up : c.down;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, yPx(b.h));
+    ctx.lineTo(x, yPx(b.l));
+    ctx.stroke();
+
+    const y1 = yPx(Math.max(b.o, b.c));
+    const y2 = yPx(Math.min(b.o, b.c));
+    ctx.fillRect(x - candleW / 2, y1, candleW, Math.max(1, y2 - y1));
+  }
+
+  /* trend lines, touches and end labels */
+  const labelYs = [];
+  for (const L of lineObjs) {
+    const color = lineColorOf(L, c);
+    const absFrom = L.drawFrom ?? L.touches?.[0] ?? start;
+    const iFrom = Math.max(0, absFrom - start);
+    const iTo = n - 1;
+    if (iTo < iFrom) continue;
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = L.type === "channel" ? 1.25 : 1.75;
+    ctx.setLineDash(
+      L.type === "channel" ? [4, 4] : (L.type === "creek" || L.type === "ice") ? [7, 4] : []
+    );
+    ctx.beginPath();
+    ctx.moveTo(xAt(iFrom), yPx(yAt(L.line, start + iFrom)));
+    ctx.lineTo(xAt(iTo), yPx(yAt(L.line, start + iTo)));
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = color;
+    ctx.strokeStyle = c.bg;
+    ctx.lineWidth = 1;
+    for (const ti of L.touches || []) {
+      if (ti < start || ti > start + n - 1) continue;
+      const px = L.kind === "support" ? bars[ti].l : bars[ti].h;
+      ctx.beginPath();
+      ctx.arc(xAt(ti - start), yPx(px), compact ? 2 : 2.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    const yEnd = yPx(yAt(L.line, start + iTo));
+    if (yEnd >= top + 6 && yEnd <= top + ph - 6) {
+      let ly = yEnd - 8;
+      while (labelYs.some(v => Math.abs(v - ly) < 13)) ly -= 13;
+      labelYs.push(ly);
+      const label = `${lineNameOf(L)} ${(L.touches || []).length}`;
+      ctx.font = sans(labelSize, 600);
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = "rgba(14,15,18,0.82)";
+      ctx.fillRect(left + pw - tw - 12, ly - 7, tw + 8, 14);
+      ctx.fillStyle = color;
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      ctx.fillText(label, left + pw - 6, ly);
+    }
+  }
+
+  /* last close marker */
+  const last = view[n - 1];
+  const lastY = yPx(last.c);
+  ctx.strokeStyle = "rgba(244,245,247,0.28)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 4]);
+  ctx.beginPath();
+  ctx.moveTo(left, lastY);
+  ctx.lineTo(left + pw, lastY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const chipW = pad.r - 16;
+  const chipH = compact ? 15 : 18;
+  ctx.fillStyle = "#1b2430";
+  ctx.fillRect(left + pw + 5, lastY - chipH / 2, chipW, chipH);
+  ctx.strokeStyle = c.accent;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(left + pw + 5.5, lastY - chipH / 2);
+  ctx.lineTo(left + pw + 5.5, lastY + chipH / 2);
+  ctx.stroke();
+  ctx.font = mono(compact ? 9 : 10.5, 600);
+  ctx.fillStyle = "#dceaf9";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(fmtPrice(last.c), left + pw + 5 + chipW / 2, lastY + 0.5);
+
+  /* title */
+  if (!compact) {
+    const dateStr = opts.date || new Date(last.t).toISOString().slice(0, 10);
+    const lineWin = analysis?.window || CFG.windows[0];
+    const narrow = cssW < 620;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    ctx.font = mono(13, 600);
+    ctx.fillStyle = c.textStrong;
+    ctx.fillText(symbol, left, 22);
+    if (!narrow) {
+      const symW = ctx.measureText(symbol).width;
+      ctx.font = sans(11.5, 400);
+      ctx.fillStyle = c.text;
+      ctx.fillText(`日線 · ${dateStr} · 顯示 ${win} 根 · 做線 ${lineWin} 根`, left + symW + 12, 22);
+    } else {
+      ctx.font = sans(11.5, 400);
+      ctx.fillStyle = c.text;
+      ctx.fillText(`日線 · ${dateStr} · 顯示 ${win} 根`, left, 40);
+    }
+
+    const prev = view[n - 2] || last;
+    const chg = prev.c ? ((last.c - prev.c) / prev.c) * 100 : 0;
+    ctx.textAlign = "right";
+    ctx.font = mono(13, 600);
+    ctx.fillStyle = c.textStrong;
+    ctx.fillText(fmtPrice(last.c), left + pw, 22);
+    const closeW = ctx.measureText(fmtPrice(last.c)).width;
+    ctx.font = mono(11, 500);
+    ctx.fillStyle = chg >= 0 ? c.up : c.down;
+    ctx.fillText(`${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%`, left + pw - closeW - 10, 22);
+  }
+}
+
+function legendHtml(analysis) {
+  const parts = [];
+  const add = (L) => {
+    if (!L) return;
+    const cls =
+      L.type === "channel" ? "c-accent" :
+      L.type === "creek" ? "c-creek" :
+      L.type === "ice" ? "c-ice" :
+      L.type === "uptrend" ? "c-up" : "c-down";
+    const name = L.type === "channel" ? "平行通道" : L.label;
+    parts.push(
+      `<span class="lg ${cls}"><b>${name}</b><em>${L.touches.length} 觸點 · 突破 ${L.bodyBreaks} · ${L.windowSize}K</em></span>`
+    );
+  };
+  add(analysis?.up);
+  add(analysis?.down);
+  add(analysis?.channel);
+  if (!analysis?.up && !analysis?.down) {
+    parts.push("<span class=\"lg\">此視窗未能形成有效四點趨勢線</span>");
+  }
+  return parts.join("");
+}
+
+/* ========== UI ========== */
+const $ = (id) => document.getElementById(id);
+const PANE_IDS = ["emptyHint", "singleView", "packView"];
+let paneToken = 0;
+const reduceMotion = () =>
+  window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+
+function replayAnim(el, cls) {
+  if (!el) return;
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+}
+
+function setStatusText(text, opts = {}) {
+  const el = $("statusText");
+  if (!el) return;
+  if (el.textContent === text) return;
+  el.textContent = text;
+  if (opts.animate !== false) replayAnim(el, "is-swap");
+}
+
+function setViewerTitle(title, sub) {
+  const t = $("viewerTitle");
+  const s = $("viewerSub");
+  const block = $("titleBlock");
+  const same =
+    (t ? t.textContent === title : true) &&
+    (s ? s.textContent === sub : true);
+  if (t) t.textContent = title;
+  if (s) s.textContent = sub;
+  if (!same) replayAnim(block, "is-swap");
+}
+
+/** 檢視區面板切換（empty / single / pack） */
+function showPane(id) {
+  const next = $(id);
+  if (!next) return;
+  for (const pid of PANE_IDS) {
+    const el = $(pid);
+    if (el) el.hidden = false;
+  }
+  const current = PANE_IDS.map($).find(el => el?.classList.contains("is-on"));
+  if (current === next) {
+    next.classList.remove("is-exit");
+    next.classList.add("is-on");
+    return;
+  }
+  const token = ++paneToken;
+  if (current) {
+    current.classList.remove("is-on");
+    current.classList.add("is-exit");
+    const leaving = current;
+    const ms = reduceMotion() ? 0 : 420;
+    window.setTimeout(() => {
+      if (token !== paneToken) return;
+      leaving.classList.remove("is-exit");
+    }, ms);
+  }
+  next.classList.remove("is-exit");
+  if (!reduceMotion()) void next.offsetWidth;
+  next.classList.add("is-on");
+}
+
+function setProgress(done, total) {
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  $("progressBar").style.width = pct + "%";
+  $("statusCount").textContent = total ? `${done} / ${total}` : "";
+}
+
+/** 近 lookback 根：相對趨勢線／通道是否觸碰或實體突破 */
+function recentLineEvents(row, lookback = 5) {
+  if (!row?.bars?.length || !row.analysis) return { touch: false, breakout: false };
+  const bars = row.bars;
+  const n = bars.length;
+  const from = Math.max(0, n - lookback);
+  let touch = false;
+  let breakout = false;
+  const lines = [row.analysis.up, row.analysis.down, row.analysis.channel].filter(Boolean);
+  for (const L of lines) {
+    if (!L.line) continue;
+    for (let i = from; i < n; i++) {
+      const y = yAt(L.line, i);
+      const bar = bars[i];
+      const tol = Math.abs(y) * CFG.touchTolPct;
+      const bt = bodyTop(bar);
+      const bb = bodyBot(bar);
+      if (L.kind === "support") {
+        if (bt < y - tol) breakout = true;
+        else if ((bar.l <= y + tol && bt >= y - tol) || Math.abs(bar.l - y) <= tol) touch = true;
+      } else {
+        if (bb > y + tol) breakout = true;
+        else if ((bar.h >= y - tol && bb <= y + tol) || Math.abs(bar.h - y) <= tol) touch = true;
+      }
+    }
+  }
+  // 有突破就只算突破，不再標觸碰
+  if (breakout) touch = false;
+  return { touch, breakout };
+}
+
+function matchesFilters(row) {
+  const { breakout, touch } = state.filters;
+  if (!breakout && !touch) return true;
+  if (row.error || !row.bars) return false;
+  const ev = recentLineEvents(row);
+  // 突破優先於觸碰（互斥）。兩條件都開：符合任一即可
+  if (breakout && touch) return ev.breakout || ev.touch;
+  if (breakout) return ev.breakout;
+  return ev.touch;
+}
+
+function filteredResults() {
+  return state.results.filter(matchesFilters);
+}
+
+function syncFilterChips(opts = {}) {
+  const map = [
+    ["filterBreakout", "breakout"],
+    ["filterTouch", "touch"]
+  ];
+  for (const [id, key] of map) {
+    const el = $(id);
+    if (!el) continue;
+    const on = !!state.filters[key];
+    el.classList.toggle("active", on);
+    el.setAttribute("aria-pressed", on ? "true" : "false");
+    if (opts.popKey === key) replayAnim(el, "is-pop");
+  }
+  const ok = state.results.filter(r => r.bars).length;
+  const n = filteredResults().filter(r => r.bars).length;
+  const meta = $("filterMeta");
+  if (meta) {
+    const tags = [];
+    if (state.filters.breakout) tags.push("突破");
+    if (state.filters.touch) tags.push("觸碰");
+    meta.innerHTML = tags.length
+      ? `篩選 <strong>${tags.join(" + ")}</strong> · <strong>${n}</strong> / ${ok} 檔`
+      : `顯示全部 · <strong>${ok}</strong> 檔`;
+    replayAnim(meta, "is-swap");
+  }
+}
+
+/** 清單 + Chartpack 同步套用篩選 */
+function applyFilters(opts = {}) {
+  syncFilterChips(opts);
+  renderList({ animate: true });
+  if (state.view === "pack" && state.results.some(r => r.bars)) {
+    renderPack();
+  } else if (state.view === "single" && state.selected) {
+    const row = filteredResults().find(r => r.symbol === state.selected);
+    if (!row) {
+      const first = filteredResults().find(r => r.bars);
+      if (first) {
+        state.selected = first.symbol;
+        showSingle(first);
+        renderList({ animate: true });
+      }
+    }
+  }
+}
+
+function renderList(opts = {}) {
+  const box = $("resultList");
+  box.innerHTML = "";
+  if (opts.animate) replayAnim(box, "is-swap");
+  const ok = state.results.filter(r => r.bars).length;
+  const filtered = filteredResults();
+  // 更新篩選列計數（避免與 applyFilters 循環：此處只刷新 meta 文字）
+  const meta = $("filterMeta");
+  if (meta) {
+    const tags = [];
+    if (state.filters.breakout) tags.push("突破");
+    if (state.filters.touch) tags.push("觸碰");
+    const n = filtered.filter(r => r.bars).length;
+    meta.innerHTML = tags.length
+      ? `篩選 <strong>${tags.join(" + ")}</strong> · <strong>${n}</strong> / ${ok} 檔`
+      : `顯示全部 · <strong>${ok}</strong> 檔`;
+  }
+  const listCount = $("listCount");
+  if (listCount) {
+    const active = state.filters.breakout || state.filters.touch;
+    const next = active
+      ? `${filtered.filter(r => r.bars).length} / ${ok} 檔`
+      : `${ok} / ${state.results.length} 檔`;
+    if (listCount.textContent !== next) {
+      listCount.textContent = next;
+      replayAnim(listCount, "is-swap");
+    }
+  }
+  filtered.forEach((r, idx) => {
+    const ev = (!r.error && r.bars) ? recentLineEvents(r) : { touch: false, breakout: false };
+    const el = document.createElement("div");
+    el.className = "list-item"
+      + (state.selected === r.symbol ? " active" : "")
+      + (r.error ? " err" : "");
+    const symEl = document.createElement("span");
+    symEl.className = "sym";
+    symEl.textContent = r.symbol;
+    el.appendChild(symEl);
+
+    const tagBox = document.createElement("span");
+    tagBox.className = "tags";
+    const hints = [];
+    if (r.error) {
+      const t = document.createElement("span");
+      t.className = "tag is-err";
+      t.textContent = "無資料";
+      tagBox.appendChild(t);
+    } else {
+      if (ev.breakout) {
+        hints.push("突破");
+        const t = document.createElement("span");
+        t.className = "tag is-break";
+        t.textContent = "突破";
+        tagBox.appendChild(t);
+      } else if (ev.touch) {
+        hints.push("觸碰");
+        const t = document.createElement("span");
+        t.className = "tag is-touch";
+        t.textContent = "觸碰";
+        tagBox.appendChild(t);
+      }
+    }
+    el.appendChild(tagBox);
+    el.tabIndex = 0;
+    el.title = r.error || (hints.length ? `${r.symbol} · ${hints.join(" · ")}` : r.symbol);
+    el.setAttribute("role", "button");
+    el.style.animationDelay = `${Math.min(idx, 40) * 14}ms`;
+    el.onclick = () => {
+      state.selected = r.symbol;
+      renderList();
+      showSingle(r);
+      setView("single");
+    };
+    el.onkeydown = (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        el.click();
+      }
+    };
+    box.appendChild(el);
+  });
+  const activeEl = box.querySelector(".list-item.active");
+  if (activeEl) {
+    const inline = window.matchMedia("(max-width: 980px)").matches ? "center" : "nearest";
+    activeEl.scrollIntoView({ block: "nearest", inline, behavior: "smooth" });
+  }
+}
+
+function analyzeRow(symbol, fullBars, dateStr) {
+  const bars = barsAsOf(fullBars, dateStr);
+  if (bars.length < 50) throw new Error("該日期前資料不足");
+  const analysis = analyzeSymbol(bars, "auto");
+  if (analysis.up) analysis.up.windowSize = analysis.up.windowSize || analysis.window;
+  if (analysis.down) analysis.down.windowSize = analysis.down.windowSize || analysis.window;
+  return { symbol, bars, analysis };
+}
+
+function showSingle(r) {
+  state.view = "single";
+  showPane("singleView");
+  const btnS = $("btnSingle");
+  const btnP = $("btnPack");
+  if (btnS && !btnS.classList.contains("active")) replayAnim(btnS, "is-pop");
+  if (btnP && btnP.classList.contains("active")) replayAnim(btnP, "is-pop");
+  btnS?.classList.toggle("active", true);
+  btnP?.classList.toggle("active", false);
+  setViewerTitle(
+    r.symbol || "單圖",
+    r.error
+      ? String(r.error)
+      : (state.packDate ? `日線 · ${state.packDate}` : "日線單圖")
+  );
+  const wrap = $("mainCanvas")?.closest(".chart-wrap");
+  if (r.error || !r.bars) {
+    $("mainLegend").textContent = r.error || "無資料";
+    replayAnim(wrap, "is-swap");
+    return;
+  }
+  const canvas = $("mainCanvas");
+  drawChart(canvas, r.bars, r.analysis, r.symbol, { date: state.packDate });
+  $("mainLegend").innerHTML = legendHtml(r.analysis);
+  replayAnim(wrap, "is-swap");
+}
+
+function renderPack() {
+  const box = $("packView");
+  box.innerHTML = "";
+  let i = 0;
+  const rows = filteredResults().filter(r => r.bars);
+  for (const r of rows) {
+    const card = document.createElement("div");
+    card.className = "pack-card";
+    card.style.animationDelay = `${Math.min(i, 24) * 28}ms`;
+    i++;
+    const canvas = document.createElement("canvas");
+    canvas.width = 900;
+    canvas.height = 486;
+    const head = document.createElement("header");
+    const ev = recentLineEvents(r);
+    const symEl = document.createElement("span");
+    symEl.className = "sym";
+    symEl.textContent = r.symbol;
+    const dateEl = document.createElement("span");
+    dateEl.className = "pack-date";
+    dateEl.textContent = state.packDate || "";
+    const headLeft = document.createElement("span");
+    headLeft.style.display = "flex";
+    headLeft.style.alignItems = "baseline";
+    headLeft.style.gap = "8px";
+    headLeft.appendChild(symEl);
+    headLeft.appendChild(dateEl);
+    const tagBox = document.createElement("span");
+    tagBox.className = "tags";
+    if (ev.breakout) {
+      const t = document.createElement("span");
+      t.className = "tag is-break";
+      t.textContent = "突破";
+      tagBox.appendChild(t);
+    } else if (ev.touch) {
+      const t = document.createElement("span");
+      t.className = "tag is-touch";
+      t.textContent = "觸碰";
+      tagBox.appendChild(t);
+    }
+    head.appendChild(headLeft);
+    head.appendChild(tagBox);
+    const info = document.createElement("div");
+    info.className = "info";
+    info.innerHTML = legendHtml(r.analysis);
+    card.appendChild(head);
+    card.appendChild(canvas);
+    card.appendChild(info);
+    card.tabIndex = 0;
+    card.onclick = () => {
+      state.selected = r.symbol;
+      renderList();
+      showSingle(r);
+      setView("single");
+    };
+    card.onkeydown = (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        card.click();
+      }
+    };
+    box.appendChild(card);
+    drawChart(canvas, r.bars, r.analysis, r.symbol, { date: state.packDate, compact: true });
+  }
+  if (!box.children.length) {
+    const active = state.filters.breakout || state.filters.touch;
+    box.innerHTML = active
+      ? `<div class="empty"><div class="empty-ico"></div><h3>沒有符合篩選的圖表</h3><p>試試只開「突破」或「觸碰」，或清除篩選。</p></div>`
+      : `<div class="empty"><div class="empty-ico"></div><h3>尚無可用圖表</h3><p>掃描完成後會顯示在這裡。</p></div>`;
+  }
+}
+
+function setView(v) {
+  if (v === "empty") {
+    state.view = "single";
+    showPane("emptyHint");
+    $("btnSingle")?.classList.remove("active");
+    $("btnPack")?.classList.remove("active");
+    setViewerTitle("圖表區", "選左側代號檢視單圖，或切換 Chartpack");
+    return;
+  }
+  state.view = v;
+  const has = state.results.some(r => r.bars);
+  const btnS = $("btnSingle");
+  const btnP = $("btnPack");
+  const wantSingle = v === "single" && has;
+  const wantPack = v === "pack" && has;
+  if (btnS && btnS.classList.contains("active") !== wantSingle) replayAnim(btnS, "is-pop");
+  if (btnP && btnP.classList.contains("active") !== wantPack) replayAnim(btnP, "is-pop");
+  btnS?.classList.toggle("active", wantSingle);
+  btnP?.classList.toggle("active", wantPack);
+
+  if (!has) {
+    showPane("emptyHint");
+    setViewerTitle("圖表區", "選左側代號檢視單圖，或切換 Chartpack");
+    return;
+  }
+  if (v === "pack") {
+    showPane("packView");
+    const n = filteredResults().filter(r => r.bars).length;
+    setViewerTitle("Chartpack", `${state.packDate || ""} · ${n} 檔`);
+    renderPack();
+    return;
+  }
+  showPane("singleView");
+  setViewerTitle(
+    state.selected || "單圖",
+    state.packDate ? `日線 · ${state.packDate}` : "日線單圖"
+  );
+}
+
+function updatePackButton() {
+  const has = state.results.some(r => r.bars);
+  $("btnPack").disabled = !has;
+  $("btnSingle").disabled = !has;
+  $("btnSave").disabled = !has;
+}
+
+function buildPackPayload(dateStr) {
+  return {
+    date: dateStr,
+    index: state.index,
+    indexLabel: currentIndexConfig().label,
+    savedAt: new Date().toISOString(),
+    count: state.results.filter(r => r.bars).length,
+    results: state.results.map(r => {
+      if (r.error || !r.bars) {
+        return { symbol: r.symbol, error: r.error || "no data" };
+      }
+      return {
+        symbol: r.symbol,
+        bars: r.bars,
+        analysis: {
+          window: r.analysis.window,
+          up: r.analysis.up || null,
+          down: r.analysis.down || null,
+          channel: r.analysis.channel || null
+        }
+      };
+    })
+  };
+}
+
+async function refreshSavedPacks(selectDate) {
+  const sel = $("savedPacks");
+  try {
+    const res = await fetch(`${LOCAL_BASE}/api/packs`);
+    const json = await res.json();
+    const dates = json.dates || [];
+    const keep = selectDate || sel.value || state.packDate;
+    sel.innerHTML = "";
+    if (!dates.length) {
+      sel.innerHTML = `<option value="">— 無 —</option>`;
+      $("btnOpen").disabled = true;
+      return dates;
+    }
+    for (const d of dates) {
+      const opt = document.createElement("option");
+      opt.value = d;
+      opt.textContent = d;
+      sel.appendChild(opt);
+    }
+    if (keep && dates.includes(keep)) sel.value = keep;
+    $("btnOpen").disabled = !sel.value;
+    return dates;
+  } catch (e) {
+    sel.innerHTML = `<option value="">— 無法讀取 —</option>`;
+    $("btnOpen").disabled = true;
+    return [];
+  }
+}
+
+async function savePack(dateStr) {
+  const d = dateStr || state.packDate || $("packDate").value || todayISO();
+  if (!state.results.some(r => r.bars)) {
+    setStatusText("無可保存的 Chartpack");
+    return false;
+  }
+  setStatusText(`保存 ${d} Chartpack…`);
+  try {
+    const payload = buildPackPayload(d);
+    const res = await fetch(`${LOCAL_BASE}/api/packs/${encodeURIComponent(d)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || ("HTTP " + res.status));
+    await refreshSavedPacks(d);
+    setStatusText(`已保存 ${d} · ${payload.count} 檔`);
+    return true;
+  } catch (e) {
+    setStatusText(`保存失敗：${e.message || e}`);
+    return false;
+  }
+}
+
+async function openPack(dateStr) {
+  const d = dateStr || $("savedPacks").value || $("packDate").value;
+  if (!d) {
+    setStatusText("請先選擇已存日期");
+    return false;
+  }
+  setStatusText(`開啟 ${d} Chartpack…`);
+  try {
+    const res = await fetch(`${LOCAL_BASE}/api/packs/${encodeURIComponent(d)}`);
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || ("HTTP " + res.status));
+    state.packDate = json.date || d;
+    $("packDate").value = state.packDate;
+    if (json.index && INDEXES[json.index]) {
+      state.index = json.index;
+      syncIndexUi();
+    }
+    state.results = (json.results || []).map(r => ({
+      symbol: r.symbol,
+      error: r.error || null,
+      bars: r.bars || null,
+      analysis: r.analysis || null
+    }));
+    state.selected = state.results.find(r => r.bars)?.symbol || null;
+    state.cache = {};
+    renderList();
+    updatePackButton();
+    await refreshSavedPacks(state.packDate);
+    const ok = state.results.filter(r => r.bars).length;
+    if (ok) {
+      setView("pack");
+      setStatusText(`已開啟 ${state.packDate} · ${ok} 檔`);
+    } else {
+      setView("empty");
+      setStatusText(`${state.packDate} — 檔案無可用圖表`);
+    }
+    return true;
+  } catch (e) {
+    setStatusText(`開啟失敗：${e.message || e}`);
+    return false;
+  }
+}
+
+/** 用快取資料依日期重算（無需重抓）；若無快取則嘗試開啟已存 */
+async function rebuildForDate(dateStr) {
+  state.packDate = dateStr;
+  const syms = Object.keys(state.cache);
+  if (!syms.length) {
+    const dates = await refreshSavedPacks();
+    if (dates.includes(dateStr)) {
+      await openPack(dateStr);
+    } else {
+      setStatusText(`已選 ${dateStr} — 點「掃描」或從「已存」開啟`);
+    }
+    return;
+  }
+  state.results = [];
+  state.selected = null;
+  setStatusText(`重算 ${dateStr} Chartpack…`);
+  for (const sym of syms) {
+    try {
+      const row = analyzeRow(sym, state.cache[sym], dateStr);
+      state.results.push(row);
+    } catch (e) {
+      state.results.push({ symbol: sym, error: String(e.message || e) });
+    }
+  }
+  renderList({ animate: true });
+  updatePackButton();
+  if (state.results.some(r => r.bars)) {
+    setView("pack");
+    setStatusText(`${dateStr} Chartpack · ${state.results.filter(r => r.bars).length} 檔（未保存）`);
+  } else {
+    setView("empty");
+    setStatusText(`${dateStr} — 無可用資料`);
+  }
+}
+
+async function runScan() {
+  state.stop = false;
+  state.results = [];
+  state.selected = null;
+  state.cache = {};
+  document.body.classList.add("is-scanning");
+  $("btnScan").disabled = true;
+  $("btnScan").classList.add("is-busy");
+  $("btnStop").disabled = false;
+  $("btnPack").disabled = true;
+  $("btnSingle").disabled = true;
+  if ($("indexSelect")) $("indexSelect").disabled = true;
+  $("resultList").innerHTML = "";
+  $("packView").innerHTML = "";
+  showPane("emptyHint");
+  const idxLabel = currentIndexConfig().label;
+  setViewerTitle("掃描中", `分析 ${idxLabel} 日線…`);
+  if ($("listCount")) {
+    $("listCount").textContent = "掃描中…";
+    replayAnim($("listCount"), "is-swap");
+  }
+
+  const dateStr = $("packDate").value || todayISO();
+  state.packDate = dateStr;
+  $("packDate").value = dateStr;
+
+  setStatusText(`取得 ${idxLabel} 成分股…`);
+  try {
+    state.symbols = await fetchIndexSymbols();
+  } catch (_) {
+    state.symbols = [...currentIndexConfig().fallback];
+  }
+
+  const total = state.symbols.length;
+  let done = 0;
+  setProgress(0, total);
+
+  for (const sym of state.symbols) {
+    if (state.stop) break;
+    setStatusText(`分析 ${sym} · ${dateStr}…`, { animate: false });
+    try {
+      const full = await fetchDailyBars(sym);
+      state.cache[sym] = full;
+      const row = analyzeRow(sym, full, dateStr);
+      state.results.push(row);
+      // 掃描中先顯示單圖，完成後切 Chartpack
+      if (!state.selected) {
+        state.selected = sym;
+        showSingle(row);
+        setView("single");
+      }
+    } catch (e) {
+      state.results.push({ symbol: sym, error: String(e.message || e) });
+    }
+    done++;
+    setProgress(done, total);
+    renderList();
+    await new Promise(r => setTimeout(r, 120));
+  }
+
+  document.body.classList.remove("is-scanning");
+  $("btnScan").disabled = false;
+  $("btnScan").classList.remove("is-busy");
+  $("btnStop").disabled = true;
+  if ($("indexSelect")) $("indexSelect").disabled = false;
+  updatePackButton();
+  const ok = state.results.filter(r => r.bars).length;
+  if (ok) {
+    setView("pack");
+    const saved = await savePack(dateStr);
+    if (!saved) {
+      setStatusText(state.stop
+        ? `已停止 — ${dateStr} · ${done}/${total}（未保存）`
+        : `完成 — ${dateStr} · ${ok} 檔（保存失敗，可點「保存」重試）`);
+    }
+  } else {
+    setView("empty");
+    setStatusText(state.stop
+      ? `已停止 — ${dateStr} · ${done}/${total}`
+      : `完成 — ${dateStr} · 無可用圖表`);
+  }
+}
+
+$("packDate").value = todayISO();
+$("packDate").max = todayISO();
+$("indexSelect").onchange = () => {
+  const v = $("indexSelect").value;
+  state.index = INDEXES[v] ? v : "ndx100";
+  syncIndexUi();
+  state.symbols = [...currentIndexConfig().fallback];
+  setStatusText(`已選 ${currentIndexConfig().label} — 選日期後開始掃描`);
+};
+syncIndexUi();
+$("btnScan").onclick = () => runScan();
+$("btnStop").onclick = () => { state.stop = true; };
+$("btnSave").onclick = () => savePack();
+$("btnOpen").onclick = () => openPack($("savedPacks").value);
+$("btnSingle").onclick = () => {
+  if (!state.results.some(r => r.bars)) return;
+  const row = state.results.find(r => r.symbol === state.selected && r.bars)
+    || state.results.find(r => r.bars);
+  if (row) {
+    state.selected = row.symbol;
+    renderList();
+    showSingle(row);
+  }
+  setView("single");
+};
+$("btnPack").onclick = () => {
+  if (state.results.some(r => r.bars)) setView("pack");
+};
+$("savedPacks").onchange = () => {
+  $("btnOpen").disabled = !$("savedPacks").value;
+};
+$("packDate").onchange = () => {
+  const dateStr = $("packDate").value || todayISO();
+  rebuildForDate(dateStr);
+};
+
+$("filterBreakout").onclick = () => {
+  state.filters.breakout = !state.filters.breakout;
+  applyFilters({ popKey: "breakout" });
+};
+$("filterTouch").onclick = () => {
+  state.filters.touch = !state.filters.touch;
+  applyFilters({ popKey: "touch" });
+};
+syncFilterChips();
+
+/** 視窗尺寸變動時重繪（canvas 依實際寬度計算，避免字被縮小） */
+let __resizeTimer = 0;
+function onViewportResize() {
+  clearTimeout(__resizeTimer);
+  __resizeTimer = window.setTimeout(() => {
+    if (state.view === "pack") {
+      renderPack();
+      return;
+    }
+    const row = state.results.find(r => r.symbol === state.selected);
+    if (row?.bars && row.analysis) {
+      drawChart($("mainCanvas"), row.bars, row.analysis, row.symbol, { date: state.packDate });
+    }
+  }, 160);
+}
+window.addEventListener("resize", onViewportResize);
+window.visualViewport?.addEventListener("resize", onViewportResize);
+
+refreshSavedPacks();
+</script>
+</body>
+</html>
