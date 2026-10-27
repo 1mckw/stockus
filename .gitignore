@@ -1,4 +1,6 @@
 .cursor/
+# 本機舊格式（僅日期、含完整 10y K 線，體積過大）
+chartpacks/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].json
 .taste-skill/
 __pycache__/
 *.pyc

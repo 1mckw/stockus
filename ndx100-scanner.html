@@ -1028,8 +1028,6 @@ const ON_PAGES = /\.github\.io$/i.test(location.hostname);
 if (ON_PAGES) {
   document.documentElement.classList.add("is-pages");
   document.body.classList.add("is-pages");
-  const emptyCopy = $("emptyCopy");
-  if (emptyCopy) emptyCopy.textContent = "選上方日期載入已掃描的 Chartpack。";
 }
 const LOCAL_BASE = (() => {
   const { hostname } = location;
@@ -1039,7 +1037,10 @@ const LOCAL_BASE = (() => {
 })();
 
 function packAsset(file) {
-  return new URL(`chartpacks/${file}`, location.href).href;
+  const path = location.pathname.endsWith("/")
+    ? location.pathname
+    : location.pathname.replace(/[^/]*$/, "");
+  return `${location.origin}${path}chartpacks/${encodeURIComponent(file)}`;
 }
 
 function medianGapDays(bars) {
@@ -1885,6 +1886,10 @@ function legendHtml(analysis) {
 
 /* ========== UI ========== */
 const $ = (id) => document.getElementById(id);
+if (ON_PAGES) {
+  const emptyCopy = $("emptyCopy");
+  if (emptyCopy) emptyCopy.textContent = "選上方日期載入已掃描的 Chartpack。";
+}
 const PANE_IDS = ["emptyHint", "singleView", "packView"];
 let paneToken = 0;
 const reduceMotion = () =>
@@ -2386,9 +2391,18 @@ async function openPack(dateStr) {
   }
   setStatusText(`開啟 ${d} Chartpack…`);
   try {
-    const res = ON_PAGES
-      ? await fetch(packAsset(`${state.index}-${d}.json`), { cache: "no-store" })
-      : await fetch(`${LOCAL_BASE}/api/packs/${encodeURIComponent(d)}`);
+    let res;
+    if (ON_PAGES) {
+      const files = [`${state.index}-${d}.json`, `${d}.json`];
+      res = null;
+      for (const f of files) {
+        const tryRes = await fetch(packAsset(f), { cache: "no-store" });
+        if (tryRes.ok) { res = tryRes; break; }
+      }
+      if (!res) throw new Error("找不到該日 Chartpack");
+    } else {
+      res = await fetch(`${LOCAL_BASE}/api/packs/${encodeURIComponent(d)}`);
+    }
     const json = await res.json();
     if (!res.ok || json.error) throw new Error(json.error || ("HTTP " + res.status));
     state.packDate = json.date || d;
@@ -2579,7 +2593,8 @@ $("savedPacks").onchange = () => {
 };
 $("packDate").onchange = () => {
   const dateStr = $("packDate").value || todayISO();
-  rebuildForDate(dateStr);
+  if (ON_PAGES) openPack(dateStr);
+  else rebuildForDate(dateStr);
 };
 
 $("filterBreakout").onclick = () => {

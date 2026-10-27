@@ -572,13 +572,17 @@ def write_latest_md(out: Path, packs: list[dict]) -> None:
 
 def write_manifest(out: Path) -> dict:
     packs = []
-    for fp in sorted(out.glob("*-????-??-??.json"), reverse=True):
+    for fp in sorted(out.glob("*.json"), reverse=True):
         name = fp.stem
+        if name == "manifest":
+            continue
         # index-YYYY-MM-DD
-        if len(name) < 12 or name[-10] != "-":
+        if len(name) < 12 or name[-11] != "-" or name[-6] != "-" or name[-3] != "-":
             continue
         date = name[-10:]
         index = name[:-11]
+        if not index:
+            continue
         try:
             data = json.loads(fp.read_text(encoding="utf-8"))
         except Exception:
