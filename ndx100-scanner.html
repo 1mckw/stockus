@@ -431,6 +431,7 @@
   }
   .tag { white-space: nowrap; }
   .tag.is-break { color: var(--warn); }
+  .tag.is-reclaim { color: var(--pos); }
   .tag.is-touch { color: var(--ice); }
   .tag.is-err { color: var(--dim); }
 
@@ -881,6 +882,7 @@
           <span class="filter-bar-label">篩選</span>
           <div class="filter-chips" role="group">
             <button type="button" class="filter-chip" id="filterBreakout" data-filter="breakout" aria-pressed="false">突破</button>
+            <button type="button" class="filter-chip" id="filterReclaim" data-filter="reclaim" aria-pressed="false" title="近 5 根有突破，且其中一根收盤收回線內">收回</button>
             <button type="button" class="filter-chip" id="filterTouch" data-filter="touch" aria-pressed="false">觸碰</button>
           </div>
         </div>
@@ -993,7 +995,7 @@ const state = {
   stop: false,
   packDate: "",
   view: "single",
-  filters: { breakout: false, touch: false }
+  filters: { breakout: false, reclaim: false, touch: false }
 };
 
 function currentIndexConfig() {
@@ -1170,283 +1172,179 @@ function yAt(line, i) { return line.m * i + line.b; }
 function bodyTop(bar) { return Math.max(bar.o, bar.c); }
 function bodyBot(bar) { return Math.min(bar.o, bar.c); }
 
-/**
- * 取相鄰間隔 ≤ maxTouchGapBars 的連續觸點段；
- * 優先選「有觸點落在 recentFrom 之後」的最長段（連接最新 K）。
- */
-function compactTouchesByGap(touches, recentFrom) {
-  if (!touches?.length) return [];
-  const maxGap = CFG.maxTouchGapBars;
-  const segments = [];
-  let cur = [touches[0]];
-  for (let i = 1; i < touches.length; i++) {
-    if (touches[i] - touches[i - 1] <= maxGap) {
-      cur.push(touches[i]);
-    } else {
-      segments.push(cur);
-      cur = [touches[i]];
-    }
-  }
-  segments.push(cur);
-
-  const needRecent = recentFrom != null;
-  const pool = needRecent
-    ? segments.filter(seg => seg.some(i => i >= recentFrom))
-    : segments;
-  if (!pool.length) return [];
-  pool.sort((a, b) => b.length - a.length);
-  return pool[0];
+function lineTol(lp) {
+  return Math.max(Math.abs(lp) * CFG.touchTolPct, 1e-9);
 }
 
-/**
- * Evaluate a candidate line on bars[start..end)
- * kind: "support" (upward / creek) or "resistance" (downward / ice)
- * 成形後：實體穿越 ≤ maxBodyBreaks（3），引線穿越 ≤ maxWickBreaks（5）。
- */
-function countLineBreaks(bars, from, line, kind) {
-  let bodyBreaks = 0;
-  let wickBreaks = 0;
-  const n = bars.length;
-  for (let i = from; i < n; i++) {
-    const y = yAt(line, i);
-    const tol = Math.abs(y) * CFG.touchTolPct;
-    const bar = bars[i];
-    if (kind === "support") {
-      if (bodyTop(bar) < y - tol) bodyBreaks++;
-      else if (bar.l < y - tol) wickBreaks++;
-    } else if (bodyBot(bar) > y + tol) {
-      bodyBreaks++;
-    } else if (bar.h > y + tol) {
-      wickBreaks++;
-    }
-  }
-  return { bodyBreaks, wickBreaks };
+function isTouchBar(bar, lp, resistance) {
+  const wick = resistance ? bar.h : bar.l;
+  return Math.abs(wick - lp) <= lineTol(lp);
 }
 
-function evaluateLine(bars, start, line, kind, pivots) {
-  const n = bars.length;
-  const touches = [];
+function bodyFullCross(bar, lp, resistance) {
+  return resistance ? bodyBot(bar) > lp : bodyTop(bar) < lp;
+}
 
-  for (let i = start; i < n; i++) {
-    const y = yAt(line, i);
-    const bar = bars[i];
-    const tol = Math.abs(y) * CFG.touchTolPct;
-    const bt = bodyTop(bar);
-    const bb = bodyBot(bar);
+function wickOnlyCross(bar, lp, resistance) {
+  if (bodyFullCross(bar, lp, resistance)) return false;
+  return resistance
+    ? bar.h > lp && bodyTop(bar) <= lp
+    : bar.l < lp && bodyBot(bar) >= lp;
+}
 
-    if (kind === "support") {
-      if (bt < y - tol) continue;
-      const wickTouch = bar.l <= y + tol && bt >= y - tol;
-      const nearLow = Math.abs(bar.l - y) <= tol;
-      const pivotTouch = pivots.includes(i) && bar.l <= y + tol * 2 && bb >= y - tol * 3;
-      if (wickTouch || nearLow || pivotTouch) {
-        const merge = CFG.touchMergeBars;
-        if (!touches.length || i - touches[touches.length - 1] >= merge) {
-          touches.push(i);
-        } else {
-          const prev = touches[touches.length - 1];
-          if (Math.abs(bar.l - y) < Math.abs(bars[prev].l - yAt(line, prev))) {
-            touches[touches.length - 1] = i;
-          }
-        }
-      }
+/** 收盤回到線的持有側：支撐收在線上、壓力收在線下 */
+function isReclaimClose(bar, lp, resistance) {
+  return resistance ? bar.c < lp : bar.c > lp;
+}
+
+function mergeTouchIndices(indices) {
+  if (!indices.length) return [];
+  const clusters = [[indices[0]]];
+  for (let k = 1; k < indices.length; k++) {
+    const i = indices[k];
+    if (i - clusters[clusters.length - 1][clusters[clusters.length - 1].length - 1] <= CFG.touchMergeBars) {
+      clusters[clusters.length - 1].push(i);
     } else {
-      if (bb > y + tol) continue;
-      const wickTouch = bar.h >= y - tol && bb <= y + tol;
-      const nearHigh = Math.abs(bar.h - y) <= tol;
-      const pivotTouch = pivots.includes(i) && bar.h >= y - tol * 2 && bt <= y + tol * 3;
-      if (wickTouch || nearHigh || pivotTouch) {
-        const merge = CFG.touchMergeBars;
-        if (!touches.length || i - touches[touches.length - 1] >= merge) {
-          touches.push(i);
-        } else {
-          const prev = touches[touches.length - 1];
-          if (Math.abs(bar.h - y) < Math.abs(bars[prev].h - yAt(line, prev))) {
-            touches[touches.length - 1] = i;
-          }
-        }
-      }
+      clusters.push([i]);
     }
   }
+  return clusters.map(cl => cl[0]);
+}
 
-  const recentFrom = Math.max(0, n - CFG.recentTouchBars);
-  const kept = compactTouchesByGap(touches, recentFrom);
-  const br = kept.length ? countLineBreaks(bars, kept[0], line, kind) : { bodyBreaks: 0, wickBreaks: 0 };
+function longestTouchSegment(indices) {
+  const merged = mergeTouchIndices(indices);
+  if (!merged.length) return [];
+  const segs = [[merged[0]]];
+  for (let k = 1; k < merged.length; k++) {
+    const i = merged[k];
+    const last = segs[segs.length - 1];
+    if (i - last[last.length - 1] > CFG.maxTouchGapBars) segs.push([i]);
+    else last.push(i);
+  }
+  segs.sort((a, b) => (b.length - a.length) || ((b[b.length - 1] - b[0]) - (a[a.length - 1] - a[0])));
+  return segs[0];
+}
+
+function collectRawTouches(bars, line, resistance, startI, endI) {
+  const hits = [];
+  for (let i = startI; i <= endI; i++) {
+    if (isTouchBar(bars[i], yAt(line, i), resistance)) hits.push(i);
+  }
+  return hits;
+}
+
+function pierceCounts(bars, line, resistance, startI, endI) {
+  let bodyN = 0, wickN = 0;
+  for (let i = startI; i <= endI; i++) {
+    const lp = yAt(line, i);
+    const bar = bars[i];
+    if (bodyFullCross(bar, lp, resistance)) bodyN++;
+    else if (wickOnlyCross(bar, lp, resistance)) wickN++;
+  }
+  return { bodyBreaks: bodyN, wickBreaks: wickN };
+}
+
+function lineScore(L) {
+  return [L.touches.length, L._span || 0, -L.touches[0]];
+}
+
+function betterLine(a, b) {
+  const sa = lineScore(a), sb = lineScore(b);
+  for (let i = 0; i < sa.length; i++) {
+    if (sa[i] !== sb[i]) return sa[i] > sb[i];
+  }
+  return false;
+}
+
+function packLine(bars, line, kind, touches, bodyN, wickN, lookback, horizontal) {
+  const n = bars.length;
+  const firstI = touches[0];
+  const lastTouch = touches[touches.length - 1];
+  const span = lastTouch - firstI;
+  let type, label;
+  if (horizontal) {
+    type = kind === "support" ? "creek" : "ice";
+    label = kind === "support" ? "Creek" : "Ice";
+  } else {
+    type = kind === "support" ? "uptrend" : "downtrend";
+    label = kind === "support" ? "向上趨勢線" : "向下趨勢線";
+  }
   return {
-    touches: kept,
-    bodyBreaks: br.bodyBreaks,
-    wickBreaks: br.wickBreaks,
-    valid: kept.length >= CFG.minTouches
-      && br.bodyBreaks <= CFG.maxBodyBreaks
-      && br.wickBreaks <= CFG.maxWickBreaks
+    kind,
+    line,
+    touches,
+    bodyBreaks: bodyN,
+    wickBreaks: wickN,
+    start: Math.max(0, n - lookback),
+    drawFrom: firstI,
+    drawTo: n - 1,
+    windowSize: lookback,
+    score: touches.length * 10 + span * 0.01,
+    _span: span,
+    label,
+    type
   };
 }
 
-function isNearHorizontal(line, bars, start) {
-  const mid = bars[Math.floor((start + bars.length - 1) / 2)];
-  const midP = (mid.h + mid.l) / 2;
-  const span = bars.length - 1 - start;
-  const drift = Math.abs(line.m) * span;
-  return drift / midP < CFG.horizSlopePct;
-}
-
-function evaluateHorizontal(bars, start, price, kind, pivots) {
-  return evaluateLine(bars, start, { m: 0, b: price }, kind, pivots);
-}
-
-/** 將接近水平的斜線標成 Creek（支撐）／Ice（壓力），必要時改為真水平線 */
-function applyCreekOrIce(candidate, bars, start, kind, pivots) {
-  const horizName = kind === "support" ? "creek" : "ice";
-  const horizLabel = kind === "support" ? "Creek" : "Ice";
-  const touchPrices = candidate.touches.map(i =>
-    kind === "support" ? bars[i].l : bars[i].h
-  );
-  touchPrices.sort((x, y) => x - y);
-  const med = touchPrices[Math.floor(touchPrices.length / 2)];
-  const horiz = evaluateHorizontal(bars, start, med, kind, pivots);
-
-  if (horiz.valid && horiz.touches.length >= candidate.touches.length) {
-    candidate.line = { m: 0, b: med };
-    candidate.touches = horiz.touches;
-    candidate.bodyBreaks = horiz.bodyBreaks;
-    candidate.wickBreaks = horiz.wickBreaks;
-    candidate.drawFrom = horiz.touches[0];
-    candidate.drawTo = horiz.touches[horiz.touches.length - 1];
-    candidate.score = horiz.touches.length * 10 - horiz.bodyBreaks * 3 + 5;
-  }
-  candidate.label = horizLabel;
-  candidate.type = horizName;
-  return candidate;
-}
-
-/**
- * 純水平 Creek / Ice：在視窗內以樞軸價位枚舉水平線（四點、實體破≤3、引線破≤5）。
- * 規則：1000K 趨勢線接近水平（或斜線不成）時採用。
- */
-function findBestHorizontal(bars, windowSize, kind) {
+function evaluateCandidate(bars, line, kind, winLo, lookback) {
   const n = bars.length;
-  const start = Math.max(0, n - windowSize);
-  const { highs, lows } = findPivots(bars, CFG.pivotLeft, CFG.pivotRight);
-  const pivots = (kind === "support" ? lows : highs).filter(i => i >= start);
-  if (pivots.length < CFG.minTouches) return null;
-
-  const prices = [];
-  for (const i of pivots) {
-    const p = kind === "support" ? bars[i].l : bars[i].h;
-    if (!Number.isFinite(p)) continue;
-    // 合併近似價位（0.15%）
-    const hit = prices.find(x => Math.abs(x - p) / p < 0.0015);
-    if (!hit) prices.push(p);
-  }
-
-  let best = null;
-  const horizName = kind === "support" ? "creek" : "ice";
-  const horizLabel = kind === "support" ? "Creek" : "Ice";
-
-  for (const price of prices) {
-    const ev = evaluateHorizontal(bars, start, price, kind, pivots);
-    if (!ev.valid) continue;
-    const score = ev.touches.length * 10 - ev.bodyBreaks * 3 + 8;
-    if (!best || score > best.score) {
-      best = {
-        kind,
-        line: { m: 0, b: price },
-        touches: ev.touches,
-        bodyBreaks: ev.bodyBreaks,
-        wickBreaks: ev.wickBreaks,
-        start,
-        drawFrom: ev.touches[0],
-        drawTo: ev.touches[ev.touches.length - 1],
-        windowSize,
-        score,
-        label: horizLabel,
-        type: horizName
-      };
+  const lastI = n - 1;
+  const resistance = kind === "resistance";
+  const raw = collectRawTouches(bars, line, resistance, winLo, lastI);
+  const seg = longestTouchSegment(raw);
+  if (seg.length < CFG.minTouches) return null;
+  const recentLo = lastI - (CFG.recentTouchBars - 1);
+  if (!seg.some(i => i >= recentLo)) return null;
+  const firstI = seg[0];
+  const br = pierceCounts(bars, line, resistance, firstI + 1, lastI);
+  if (br.bodyBreaks > CFG.maxBodyBreaks || br.wickBreaks > CFG.maxWickBreaks) return null;
+  let outLine = { ...line };
+  let horizontal = false;
+  const span = seg[seg.length - 1] - firstI;
+  const p0 = yAt(line, firstI);
+  const maxWin = CFG.windows[CFG.windows.length - 1];
+  if (lookback >= maxWin && p0) {
+    const drift = Math.abs(line.m) * span / Math.abs(p0);
+    if (drift < CFG.horizSlopePct) {
+      const level = seg.reduce((s, i) => s + yAt(line, i), 0) / seg.length;
+      outLine = { m: 0, b: level };
+      horizontal = true;
     }
   }
-  return best;
+  return packLine(bars, outLine, kind, seg, br.bodyBreaks, br.wickBreaks, lookback, horizontal);
 }
 
-/**
- * Search best support (up) or resistance (down) line in window.
- * forceHoriz：1000K 時若近水平，強制改 Creek/Ice；不成斜線則搜純水平。
- */
-function findBestLine(bars, windowSize, kind, opts = {}) {
-  const forceHoriz = !!opts.forceHoriz;
+function pivotsInLookback(bars, lookback) {
+  const startIdx = Math.max(0, bars.length - lookback);
+  const slice = bars.slice(startIdx);
+  const { highs, lows } = findPivots(slice, CFG.pivotLeft, CFG.pivotRight);
+  return {
+    highs: highs.map(i => i + startIdx),
+    lows: lows.map(i => i + startIdx)
+  };
+}
+
+function collectSideLine(bars, lookback, kind) {
   const n = bars.length;
-  const start = Math.max(0, n - windowSize);
-  const { highs, lows } = findPivots(bars, CFG.pivotLeft, CFG.pivotRight);
-  const pivots = (kind === "support" ? lows : highs).filter(i => i >= start);
-
-  if (pivots.length < 3) {
-    return forceHoriz ? findBestHorizontal(bars, windowSize, kind) : null;
-  }
-
+  const actual = Math.min(lookback, n);
+  const winLo = n - actual;
+  const { highs, lows } = pivotsInLookback(bars, actual);
+  const pts = kind === "support" ? lows : highs;
   let best = null;
-
-  // Enumerate pivot pairs as anchors, score by touches
-  for (let a = 0; a < pivots.length - 1; a++) {
-    for (let b = a + 1; b < pivots.length; b++) {
-      const i1 = pivots[a], i2 = pivots[b];
+  for (let a = 0; a < pts.length; a++) {
+    for (let c = a + 1; c < pts.length; c++) {
+      const i1 = pts[a], i2 = pts[c];
       if (i2 - i1 < 5) continue;
       const p1 = kind === "support" ? bars[i1].l : bars[i1].h;
       const p2 = kind === "support" ? bars[i2].l : bars[i2].h;
+      if (kind === "support" && p2 < p1) continue;
+      if (kind === "resistance" && p2 > p1) continue;
       const line = lineThrough(i1, p1, i2, p2);
-
-      // Direction filter
-      if (kind === "support" && line.m < -1e-9) continue;   // must be flat or rising
-      if (kind === "resistance" && line.m > 1e-9) continue; // must be flat or falling
-
-      // 從第一錨點起評分（線成形前的穿越不計）
-      const ev = evaluateLine(bars, Math.min(i1, i2), line, kind, pivots);
-      if (!ev.valid) continue;
-
-      const score = ev.touches.length * 10 - ev.bodyBreaks * 3 + (i2 - i1) * 0.01;
-
-      const candidate = {
-        kind,
-        line,
-        touches: ev.touches,
-        bodyBreaks: ev.bodyBreaks,
-        wickBreaks: ev.wickBreaks,
-        start,
-        drawFrom: ev.touches[0],
-        drawTo: ev.touches[ev.touches.length - 1],
-        windowSize,
-        score,
-        label: kind === "support" ? "向上趨勢線" : "向下趨勢線",
-        type: kind === "support" ? "uptrend" : "downtrend"
-      };
-
-      // 近水平 → Creek / Ice；1000K 用略寬判定也改標
-      const nearH = isNearHorizontal(line, bars, start);
-      const nearH1000 = forceHoriz && (() => {
-        const midP = ((bars[start].h + bars[start].l) / 2) || 1;
-        const drift = Math.abs(line.m) * (n - 1 - start);
-        return drift / midP < CFG.horizSlopePct * 1.5;
-      })();
-      if (nearH || nearH1000) {
-        applyCreekOrIce(candidate, bars, Math.min(i1, i2), kind, pivots);
-      }
-
-      if (!best || candidate.score > best.score) best = candidate;
+      const cand = evaluateCandidate(bars, line, kind, winLo, actual);
+      if (!cand) continue;
+      if (!best || betterLine(cand, best)) best = cand;
     }
   }
-
-  // 1000K：斜線不成或結果已近水平 → 再比純水平 Creek/Ice
-  if (forceHoriz) {
-    const horiz = findBestHorizontal(bars, windowSize, kind);
-    if (horiz && (!best || horiz.score >= (best.score || 0) || best.type === "creek" || best.type === "ice")) {
-      if (!best || horiz.score > best.score) best = horiz;
-      else if (best && (best.type === "uptrend" || best.type === "downtrend") && isNearHorizontal(best.line, bars, start)) {
-        best = horiz;
-      }
-    }
-    if (best && (best.type === "uptrend" || best.type === "downtrend") && isNearHorizontal(best.line, bars, start)) {
-      applyCreekOrIce(best, bars, start, kind, pivots);
-    }
-  }
-
   return best;
 }
 
@@ -1455,43 +1353,27 @@ function analyzeSymbol(bars, mode) {
     ? CFG.windows
     : [parseInt(mode, 10)].filter(Boolean);
 
-  let up = null, down = null;
-  let usedWindow = null;
-
-  // 由小到大：200 → 300 → …；不成線才擴大。1000K 近水平強制 Creek/Ice。
-  for (const w of windows) {
-    if (bars.length < Math.min(w, 80)) continue;
-    const forceHoriz = w >= 1000;
-    if (!up) up = findBestLine(bars, w, "support", { forceHoriz });
-    if (!down) down = findBestLine(bars, w, "resistance", { forceHoriz });
-    if (up && down) {
-      usedWindow = w;
-      break;
-    }
-    if (!usedWindow && (up || down)) usedWindow = w;
-  }
-
-  // 若只找到一邊，繼續擴大找另一邊
-  if ((!up || !down) && mode === "auto") {
-    for (const w of CFG.windows) {
-      const forceHoriz = w >= 1000;
-      if (!up) up = findBestLine(bars, w, "support", { forceHoriz });
-      if (!down) down = findBestLine(bars, w, "resistance", { forceHoriz });
-      if (up && down) {
-        usedWindow = Math.max(usedWindow || 0, w);
+  const found = {};
+  for (const kind of ["support", "resistance"]) {
+    for (const lookback of windows) {
+      const actual = Math.min(lookback, bars.length);
+      if (actual < 80 && lookback >= 80) continue;
+      const line = collectSideLine(bars, actual, kind);
+      if (line) {
+        found[kind] = line;
         break;
       }
+      if (actual >= bars.length) break;
     }
   }
 
-  // 1000K 仍缺線 → 最後一次純水平備援
-  if ((!up || !down) && mode === "auto") {
-    if (!up) up = findBestHorizontal(bars, 1000, "support");
-    if (!down) down = findBestHorizontal(bars, 1000, "resistance");
-    if ((up || down) && !usedWindow) usedWindow = 1000;
+  const up = found.support || null;
+  const down = found.resistance || null;
+  let usedWindow = null;
+  for (const L of [up, down]) {
+    if (L?.windowSize) usedWindow = usedWindow == null ? L.windowSize : Math.max(usedWindow, L.windowSize);
   }
 
-  // 單線 → 平行通道（對側同規則：四點成線、實體破≤3、引線破≤5）
   let channel = null;
   const primary = up && !down ? up : (!up && down ? down : null);
   if (primary) channel = makeParallelChannel(primary, bars);
@@ -1500,76 +1382,38 @@ function analyzeSymbol(bars, mode) {
 }
 
 /**
- * 由單線生成平行通道對側：同斜率，對側樞軸枚舉，
- * 須通過 evaluateLine（≥4 觸點、實體突破 ≤3、引線突破 ≤5）。
+ * 單邊才找平行通道：同斜率、對側樞軸錨點，四點／實體破≤3／引線破≤5。
  */
 function makeParallelChannel(L, bars) {
   if (!L?.touches?.length) return null;
   const n = bars.length;
-  const evalStart = L.start ?? L.drawFrom ?? L.touches[0];
+  const lookback = L.windowSize || n;
+  const winLo = Math.max(0, n - lookback);
   const i0 = L.drawFrom ?? L.touches[0];
   if (i0 >= n - 1) return null;
 
   const oppKind = L.kind === "support" ? "resistance" : "support";
-  const { highs, lows } = findPivots(bars, CFG.pivotLeft, CFG.pivotRight);
-  const pivots = (oppKind === "support" ? lows : highs).filter(i => i >= evalStart);
+  const { highs, lows } = pivotsInLookback(bars, lookback);
+  const pts = oppKind === "support" ? lows : highs;
   const m = L.line.m;
-
   let best = null;
 
-  // 候選：對側樞軸作錨點（同斜率平行線）
-  const tryCandidate = (line, scoreBonus = 0) => {
-    // 通道必須在主線外側
-    const mid = Math.floor((i0 + n - 1) / 2);
-    const primaryY = yAt(L.line, mid);
-    const candY = yAt(line, mid);
-    if (L.kind === "support" && candY <= primaryY + 1e-9) return;
-    if (L.kind === "resistance" && candY >= primaryY - 1e-9) return;
-
-    const ev = evaluateLine(bars, evalStart, line, oppKind, pivots);
-    if (!ev.valid) return;
-    const score = ev.touches.length * 10 - ev.bodyBreaks * 3 + scoreBonus;
-    if (!best || score > best.score) {
-      best = {
-        kind: oppKind,
-        line,
-        touches: ev.touches,
-        bodyBreaks: ev.bodyBreaks,
-        wickBreaks: ev.wickBreaks,
-        drawFrom: Math.min(i0, ev.touches[0]),
-        drawTo: n - 1,
-        start: evalStart,
-        windowSize: L.windowSize,
-        score,
-        label: "平行通道",
-        type: "channel",
-        isParallel: true,
-        pairOf: L.type
-      };
-    }
-  };
-
-  for (const i of pivots) {
-    if (i < i0) continue;
+  for (const i of pts) {
+    const srcY = yAt(L.line, i);
     const price = oppKind === "support" ? bars[i].l : bars[i].h;
-    tryCandidate({ m, b: price - m * i });
+    if (oppKind === "resistance" && price < srcY) continue;
+    if (oppKind === "support" && price > srcY) continue;
+    const cand = evaluateCandidate(bars, { m, b: price - m * i }, oppKind, winLo, lookback);
+    if (!cand) continue;
+    if (!best || betterLine(cand, best)) best = cand;
   }
-
-  // 備援：區間內對側極值貼齊（仍須通過四點／突破規則）
-  let extremeOffset = -Infinity;
-  let extremeI = i0;
-  for (let i = i0; i < n; i++) {
-    const y = yAt(L.line, i);
-    const offset = L.kind === "support" ? bars[i].h - y : y - bars[i].l;
-    if (offset > extremeOffset) { extremeOffset = offset; extremeI = i; }
-  }
-  if (extremeOffset > 0) {
-    const line = L.kind === "support"
-      ? { m, b: L.line.b + extremeOffset }
-      : { m, b: L.line.b - extremeOffset };
-    tryCandidate(line, 1);
-  }
-
+  if (!best) return null;
+  best.type = "channel";
+  best.label = "平行通道";
+  best.isParallel = true;
+  best.pairOf = L.type;
+  best.drawFrom = Math.min(i0, best.touches[0]);
+  best.drawTo = n - 1;
   return best;
 }
 
@@ -1999,46 +1843,50 @@ function setProgress(done, total) {
   $("statusCount").textContent = total ? `${done} / ${total}` : "";
 }
 
-/** 近 lookback 根：相對趨勢線／通道是否觸碰或實體突破 */
+/** 近 lookback 根：突破／收回／觸碰（收回 = 有突破且之後至少一根收盤回到線內） */
 function recentLineEvents(row, lookback = 5) {
-  if (!row?.bars?.length || !row.analysis) return { touch: false, breakout: false };
+  if (!row?.bars?.length || !row.analysis) return { touch: false, breakout: false, reclaim: false };
   const bars = row.bars;
   const n = bars.length;
   const from = Math.max(0, n - lookback);
   let touch = false;
   let breakout = false;
+  let reclaim = false;
   const lines = [row.analysis.up, row.analysis.down, row.analysis.channel].filter(Boolean);
   for (const L of lines) {
     if (!L.line) continue;
+    const resistance = L.kind === "resistance";
+    let brokeAt = -1;
     for (let i = from; i < n; i++) {
       const y = yAt(L.line, i);
       const bar = bars[i];
-      const tol = Math.abs(y) * CFG.touchTolPct;
-      const bt = bodyTop(bar);
-      const bb = bodyBot(bar);
-      if (L.kind === "support") {
-        if (bt < y - tol) breakout = true;
-        else if ((bar.l <= y + tol && bt >= y - tol) || Math.abs(bar.l - y) <= tol) touch = true;
-      } else {
-        if (bb > y + tol) breakout = true;
-        else if ((bar.h >= y - tol && bb <= y + tol) || Math.abs(bar.h - y) <= tol) touch = true;
+      const brk = bodyFullCross(bar, y, resistance) || wickOnlyCross(bar, y, resistance);
+      if (brk) {
+        breakout = true;
+        if (brokeAt < 0) brokeAt = i;
+      } else if (isTouchBar(bar, y, resistance)) {
+        touch = true;
       }
+      if (brokeAt >= 0 && i >= brokeAt && isReclaimClose(bar, y, resistance)) reclaim = true;
     }
   }
-  // 有突破就只算突破，不再標觸碰
-  if (breakout) touch = false;
-  return { touch, breakout };
+  if (reclaim || breakout) touch = false;
+  return { touch, breakout, reclaim };
+}
+
+function anyFilterOn() {
+  return !!(state.filters.breakout || state.filters.reclaim || state.filters.touch);
 }
 
 function matchesFilters(row) {
-  const { breakout, touch } = state.filters;
-  if (!breakout && !touch) return true;
+  if (!anyFilterOn()) return true;
   if (row.error || !row.bars) return false;
   const ev = recentLineEvents(row);
-  // 突破優先於觸碰（互斥）。兩條件都開：符合任一即可
-  if (breakout && touch) return ev.breakout || ev.touch;
-  if (breakout) return ev.breakout;
-  return ev.touch;
+  const want = [];
+  if (state.filters.breakout) want.push(ev.breakout);
+  if (state.filters.reclaim) want.push(ev.reclaim);
+  if (state.filters.touch) want.push(ev.touch);
+  return want.some(Boolean);
 }
 
 function filteredResults() {
@@ -2048,6 +1896,7 @@ function filteredResults() {
 function syncFilterChips(opts = {}) {
   const map = [
     ["filterBreakout", "breakout"],
+    ["filterReclaim", "reclaim"],
     ["filterTouch", "touch"]
   ];
   for (const [id, key] of map) {
@@ -2064,6 +1913,7 @@ function syncFilterChips(opts = {}) {
   if (meta) {
     const tags = [];
     if (state.filters.breakout) tags.push("突破");
+    if (state.filters.reclaim) tags.push("收回");
     if (state.filters.touch) tags.push("觸碰");
     meta.innerHTML = tags.length
       ? `篩選 <strong>${tags.join(" + ")}</strong> · <strong>${n}</strong> / ${ok} 檔`
@@ -2102,6 +1952,7 @@ function renderList(opts = {}) {
   if (meta) {
     const tags = [];
     if (state.filters.breakout) tags.push("突破");
+    if (state.filters.reclaim) tags.push("收回");
     if (state.filters.touch) tags.push("觸碰");
     const n = filtered.filter(r => r.bars).length;
     meta.innerHTML = tags.length
@@ -2110,7 +1961,7 @@ function renderList(opts = {}) {
   }
   const listCount = $("listCount");
   if (listCount) {
-    const active = state.filters.breakout || state.filters.touch;
+    const active = anyFilterOn();
     const next = active
       ? `${filtered.filter(r => r.bars).length} / ${ok} 檔`
       : `${ok} / ${state.results.length} 檔`;
@@ -2139,7 +1990,13 @@ function renderList(opts = {}) {
       t.textContent = "無資料";
       tagBox.appendChild(t);
     } else {
-      if (ev.breakout) {
+      if (ev.reclaim) {
+        hints.push("收回");
+        const t = document.createElement("span");
+        t.className = "tag is-reclaim";
+        t.textContent = "收回";
+        tagBox.appendChild(t);
+      } else if (ev.breakout) {
         hints.push("突破");
         const t = document.createElement("span");
         t.className = "tag is-break";
@@ -2244,7 +2101,12 @@ function renderPack() {
     headLeft.appendChild(dateEl);
     const tagBox = document.createElement("span");
     tagBox.className = "tags";
-    if (ev.breakout) {
+    if (ev.reclaim) {
+      const t = document.createElement("span");
+      t.className = "tag is-reclaim";
+      t.textContent = "收回";
+      tagBox.appendChild(t);
+    } else if (ev.breakout) {
       const t = document.createElement("span");
       t.className = "tag is-break";
       t.textContent = "突破";
@@ -2280,9 +2142,9 @@ function renderPack() {
     drawChart(canvas, r.bars, r.analysis, r.symbol, { date: state.packDate, compact: true });
   }
   if (!box.children.length) {
-    const active = state.filters.breakout || state.filters.touch;
+    const active = anyFilterOn();
     box.innerHTML = active
-      ? `<div class="empty"><div class="empty-ico"></div><h3>沒有符合篩選的圖表</h3><p>試試只開「突破」或「觸碰」，或清除篩選。</p></div>`
+      ? `<div class="empty"><div class="empty-ico"></div><h3>沒有符合篩選的圖表</h3><p>試試「突破」「收回」或「觸碰」，或清除篩選。</p></div>`
       : `<div class="empty"><div class="empty-ico"></div><h3>尚無可用圖表</h3><p>掃描完成後會顯示在這裡。</p></div>`;
   }
 }
@@ -2645,6 +2507,10 @@ $("packDate").onchange = () => {
 $("filterBreakout").onclick = () => {
   state.filters.breakout = !state.filters.breakout;
   applyFilters({ popKey: "breakout" });
+};
+$("filterReclaim").onclick = () => {
+  state.filters.reclaim = !state.filters.reclaim;
+  applyFilters({ popKey: "reclaim" });
 };
 $("filterTouch").onclick = () => {
   state.filters.touch = !state.filters.touch;

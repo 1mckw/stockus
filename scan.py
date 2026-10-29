@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Headless NDX100 / DJI30 daily scanner for local use and GitHub Actions."""
+"""Headless NDX100 / DJI30 daily scanner for local use and GitHub Actions.
+
+Trend lines follow the four-point expanding-window rules (same concept as ts):
+  ≥4 merged wick touches, support slope ≥ 0, resistance slope ≤ 0.
+  Draw from the first touch through the latest bar of the search window.
+  Creek / Ice naming stays Wyckoff for the existing UI (Creek = support, Ice = resistance).
+"""
 from __future__ import annotations
 
 import argparse
@@ -23,6 +29,7 @@ NDX100_FALLBACK = [
 
 PIVOT_LEFT = 3
 PIVOT_RIGHT = 3
+MIN_ANCHOR_GAP = 5
 TOUCH_TOL_PCT = 0.0045
 TOUCH_MERGE_BARS = 5
 MAX_TOUCH_GAP_BARS = 120
@@ -33,6 +40,7 @@ HORIZ_SLOPE_PCT = 0.015
 MIN_TOUCHES = 4
 WINDOWS = [200, 300, 400, 500, 600, 800, 1000]
 CHART_WINDOW = 600
+TREND_SIGNAL_BARS = 5
 
 
 def today_iso() -> str:
@@ -153,212 +161,170 @@ def body_bot(bar):
     return min(bar["o"], bar["c"])
 
 
-def compact_touches_by_gap(touches, recent_from):
-    if not touches:
+def _tol(lp):
+    return max(abs(lp) * TOUCH_TOL_PCT, 1e-9)
+
+
+def is_touch_bar(bar, lp, resistance):
+    wick = bar["h"] if resistance else bar["l"]
+    return abs(wick - lp) <= _tol(lp)
+
+
+def body_full_cross(bar, lp, resistance):
+    if resistance:
+        return body_bot(bar) > lp
+    return body_top(bar) < lp
+
+
+def wick_only_cross(bar, lp, resistance):
+    if body_full_cross(bar, lp, resistance):
+        return False
+    if resistance:
+        return bar["h"] > lp and body_top(bar) <= lp
+    return bar["l"] < lp and body_bot(bar) >= lp
+
+
+def is_reclaim_close(bar, lp, resistance):
+    return bar["c"] < lp if resistance else bar["c"] > lp
+
+
+def merge_touch_indices(indices):
+    if not indices:
         return []
-    segments = []
-    cur = [touches[0]]
-    for i in range(1, len(touches)):
-        if touches[i] - touches[i - 1] <= MAX_TOUCH_GAP_BARS:
-            cur.append(touches[i])
+    clusters = [[indices[0]]]
+    for i in indices[1:]:
+        if i - clusters[-1][-1] <= TOUCH_MERGE_BARS:
+            clusters[-1].append(i)
         else:
-            segments.append(cur)
-            cur = [touches[i]]
-    segments.append(cur)
-    pool = [s for s in segments if any(i >= recent_from for i in s)] if recent_from is not None else segments
-    if not pool:
+            clusters.append([i])
+    return [cl[0] for cl in clusters]
+
+
+def longest_touch_segment(indices):
+    merged = merge_touch_indices(indices)
+    if not merged:
         return []
-    pool.sort(key=len, reverse=True)
-    return pool[0]
+    segs = [[merged[0]]]
+    for i in merged[1:]:
+        if i - segs[-1][-1] > MAX_TOUCH_GAP_BARS:
+            segs.append([i])
+        else:
+            segs[-1].append(i)
+    return max(segs, key=lambda s: (len(s), s[-1] - s[0]))
 
 
-def evaluate_line(bars, start, line, kind, pivots):
-    n = len(bars)
-    pivot_set = set(pivots)
-    touches = []
-    for i in range(start, n):
-        y = y_at(line, i)
+def collect_raw_touches(bars, line, resistance, start_i, end_i):
+    hits = []
+    for i in range(start_i, end_i + 1):
+        if is_touch_bar(bars[i], y_at(line, i), resistance):
+            hits.append(i)
+    return hits
+
+
+def pierce_counts(bars, line, resistance, start_i, end_i):
+    body_n = wick_n = 0
+    for i in range(start_i, end_i + 1):
+        lp = y_at(line, i)
         bar = bars[i]
-        tol = abs(y) * TOUCH_TOL_PCT
-        bt, bb = body_top(bar), body_bot(bar)
-        if kind == "support":
-            if bt < y - tol:
-                continue
-            wick = bar["l"] <= y + tol and bt >= y - tol
-            near = abs(bar["l"] - y) <= tol
-            pv = i in pivot_set and bar["l"] <= y + tol * 2 and bb >= y - tol * 3
-            if wick or near or pv:
-                if not touches or i - touches[-1] >= TOUCH_MERGE_BARS:
-                    touches.append(i)
-                else:
-                    prev = touches[-1]
-                    if abs(bar["l"] - y) < abs(bars[prev]["l"] - y_at(line, prev)):
-                        touches[-1] = i
-        else:
-            if bb > y + tol:
-                continue
-            wick = bar["h"] >= y - tol and bb <= y + tol
-            near = abs(bar["h"] - y) <= tol
-            pv = i in pivot_set and bar["h"] >= y - tol * 2 and bt <= y + tol * 3
-            if wick or near or pv:
-                if not touches or i - touches[-1] >= TOUCH_MERGE_BARS:
-                    touches.append(i)
-                else:
-                    prev = touches[-1]
-                    if abs(bar["h"] - y) < abs(bars[prev]["h"] - y_at(line, prev)):
-                        touches[-1] = i
-    recent_from = max(0, n - RECENT_TOUCH_BARS)
-    kept = compact_touches_by_gap(touches, recent_from)
-    body_breaks = wick_breaks = 0
-    if kept:
-        for i in range(kept[0], n):
-            y = y_at(line, i)
-            tol = abs(y) * TOUCH_TOL_PCT
-            bar = bars[i]
-            if kind == "support":
-                if body_top(bar) < y - tol:
-                    body_breaks += 1
-                elif bar["l"] < y - tol:
-                    wick_breaks += 1
-            elif body_bot(bar) > y + tol:
-                body_breaks += 1
-            elif bar["h"] > y + tol:
-                wick_breaks += 1
+        if body_full_cross(bar, lp, resistance):
+            body_n += 1
+        elif wick_only_cross(bar, lp, resistance):
+            wick_n += 1
+    return body_n, wick_n
+
+
+def _line_score(L):
+    return (len(L["touches"]), L.get("_span", 0), -L["touches"][0])
+
+
+def pack_line(bars, line, kind, touches, body_n, wick_n, lookback, *, horizontal=False):
+    n = len(bars)
+    first_i, last_touch = touches[0], touches[-1]
+    span = last_touch - first_i
+    if horizontal:
+        typ, label = ("creek", "Creek") if kind == "support" else ("ice", "Ice")
+    else:
+        typ = "uptrend" if kind == "support" else "downtrend"
+        label = "向上趨勢線" if kind == "support" else "向下趨勢線"
     return {
-        "touches": kept,
-        "bodyBreaks": body_breaks,
-        "wickBreaks": wick_breaks,
-        "valid": (
-            len(kept) >= MIN_TOUCHES
-            and body_breaks <= MAX_BODY_BREAKS
-            and wick_breaks <= MAX_WICK_BREAKS
-        ),
+        "kind": kind,
+        "line": line,
+        "touches": touches,
+        "bodyBreaks": body_n,
+        "wickBreaks": wick_n,
+        "start": max(0, n - lookback),
+        "drawFrom": first_i,
+        "drawTo": n - 1,
+        "windowSize": lookback,
+        "score": len(touches) * 10 + span * 0.01,
+        "_span": span,
+        "label": label,
+        "type": typ,
     }
 
 
-def is_near_horizontal(line, bars, start):
-    mid = bars[(start + len(bars) - 1) // 2]
-    mid_p = (mid["h"] + mid["l"]) / 2
-    span = len(bars) - 1 - start
-    return abs(line["m"]) * span / mid_p < HORIZ_SLOPE_PCT
-
-
-def apply_creek_or_ice(candidate, bars, start, kind, pivots):
-    horiz_name = "creek" if kind == "support" else "ice"
-    horiz_label = "Creek" if kind == "support" else "Ice"
-    prices = sorted(bars[i]["l"] if kind == "support" else bars[i]["h"] for i in candidate["touches"])
-    med = prices[len(prices) // 2]
-    horiz = evaluate_line(bars, start, {"m": 0, "b": med}, kind, pivots)
-    if horiz["valid"] and len(horiz["touches"]) >= len(candidate["touches"]):
-        candidate["line"] = {"m": 0, "b": med}
-        candidate["touches"] = horiz["touches"]
-        candidate["bodyBreaks"] = horiz["bodyBreaks"]
-        candidate["wickBreaks"] = horiz["wickBreaks"]
-        candidate["drawFrom"] = horiz["touches"][0]
-        candidate["drawTo"] = horiz["touches"][-1]
-        candidate["score"] = len(horiz["touches"]) * 10 - horiz["bodyBreaks"] * 3 + 5
-    candidate["label"] = horiz_label
-    candidate["type"] = horiz_name
-    return candidate
-
-
-def find_best_horizontal(bars, window_size, kind):
+def evaluate_candidate(bars, line, kind, win_lo, lookback):
     n = len(bars)
-    start = max(0, n - window_size)
-    highs, lows = find_pivots(bars, PIVOT_LEFT, PIVOT_RIGHT)
-    pivots = [i for i in (lows if kind == "support" else highs) if i >= start]
-    if len(pivots) < MIN_TOUCHES:
+    last_i = n - 1
+    resistance = kind == "resistance"
+    raw = collect_raw_touches(bars, line, resistance, win_lo, last_i)
+    seg = longest_touch_segment(raw)
+    if len(seg) < MIN_TOUCHES:
         return None
-    prices = []
-    for i in pivots:
-        p = bars[i]["l"] if kind == "support" else bars[i]["h"]
-        if not (p == p):
-            continue
-        if not any(abs(x - p) / p < 0.0015 for x in prices):
-            prices.append(p)
-    best = None
-    horiz_name = "creek" if kind == "support" else "ice"
-    horiz_label = "Creek" if kind == "support" else "Ice"
-    for price in prices:
-        ev = evaluate_line(bars, start, {"m": 0, "b": price}, kind, pivots)
-        if not ev["valid"]:
-            continue
-        score = len(ev["touches"]) * 10 - ev["bodyBreaks"] * 3 + 8
-        if best is None or score > best["score"]:
-            best = {
-                "kind": kind,
-                "line": {"m": 0, "b": price},
-                "touches": ev["touches"],
-                "bodyBreaks": ev["bodyBreaks"],
-                "wickBreaks": ev["wickBreaks"],
-                "start": start,
-                "drawFrom": ev["touches"][0],
-                "drawTo": ev["touches"][-1],
-                "windowSize": window_size,
-                "score": score,
-                "label": horiz_label,
-                "type": horiz_name,
-            }
-    return best
+    recent_lo = last_i - (RECENT_TOUCH_BARS - 1)
+    if not any(i >= recent_lo for i in seg):
+        return None
+    first_i = seg[0]
+    body_n, wick_n = pierce_counts(bars, line, resistance, first_i + 1, last_i)
+    if body_n > MAX_BODY_BREAKS or wick_n > MAX_WICK_BREAKS:
+        return None
+    out_line = dict(line)
+    horizontal = False
+    span = seg[-1] - first_i
+    p0 = y_at(line, first_i)
+    if lookback >= WINDOWS[-1] and p0:
+        drift = abs(line["m"]) * span / abs(p0)
+        if drift < HORIZ_SLOPE_PCT:
+            level = sum(y_at(line, i) for i in seg) / len(seg)
+            out_line = {"m": 0.0, "b": level}
+            horizontal = True
+    packed = pack_line(
+        bars, out_line, kind, seg, body_n, wick_n, lookback, horizontal=horizontal
+    )
+    return packed
 
 
-def find_best_line(bars, window_size, kind, force_horiz=False):
+def _pivots_in_lookback(bars, lookback):
+    start_idx = max(0, len(bars) - lookback)
+    slice_b = bars[start_idx:]
+    highs, lows = find_pivots(slice_b, PIVOT_LEFT, PIVOT_RIGHT)
+    return [i + start_idx for i in highs], [i + start_idx for i in lows]
+
+
+def collect_side_line(bars, lookback, kind):
     n = len(bars)
-    start = max(0, n - window_size)
-    highs, lows = find_pivots(bars, PIVOT_LEFT, PIVOT_RIGHT)
-    pivots = [i for i in (lows if kind == "support" else highs) if i >= start]
-    if len(pivots) < 3:
-        return find_best_horizontal(bars, window_size, kind) if force_horiz else None
+    actual = min(lookback, n)
+    win_lo = n - actual
+    highs, lows = _pivots_in_lookback(bars, actual)
+    pts = lows if kind == "support" else highs
     best = None
-    for a in range(len(pivots) - 1):
-        for b in range(a + 1, len(pivots)):
-            i1, i2 = pivots[a], pivots[b]
-            if i2 - i1 < 5:
+    for a in range(len(pts)):
+        for c in range(a + 1, len(pts)):
+            i1, i2 = pts[a], pts[c]
+            if i2 - i1 < MIN_ANCHOR_GAP:
                 continue
             p1 = bars[i1]["l"] if kind == "support" else bars[i1]["h"]
             p2 = bars[i2]["l"] if kind == "support" else bars[i2]["h"]
+            if kind == "support" and p2 < p1:
+                continue
+            if kind == "resistance" and p2 > p1:
+                continue
             line = line_through(i1, p1, i2, p2)
-            if kind == "support" and line["m"] < -1e-9:
+            cand = evaluate_candidate(bars, line, kind, win_lo, actual)
+            if cand is None:
                 continue
-            if kind == "resistance" and line["m"] > 1e-9:
-                continue
-            ev = evaluate_line(bars, min(i1, i2), line, kind, pivots)
-            if not ev["valid"]:
-                continue
-            score = len(ev["touches"]) * 10 - ev["bodyBreaks"] * 3 + (i2 - i1) * 0.01
-            candidate = {
-                "kind": kind,
-                "line": line,
-                "touches": ev["touches"],
-                "bodyBreaks": ev["bodyBreaks"],
-                "wickBreaks": ev["wickBreaks"],
-                "start": start,
-                "drawFrom": ev["touches"][0],
-                "drawTo": ev["touches"][-1],
-                "windowSize": window_size,
-                "score": score,
-                "label": "向上趨勢線" if kind == "support" else "向下趨勢線",
-                "type": "uptrend" if kind == "support" else "downtrend",
-            }
-            near_h = is_near_horizontal(line, bars, start)
-            near_h1000 = False
-            if force_horiz:
-                mid_p = ((bars[start]["h"] + bars[start]["l"]) / 2) or 1
-                drift = abs(line["m"]) * (n - 1 - start)
-                near_h1000 = drift / mid_p < HORIZ_SLOPE_PCT * 1.5
-            if near_h or near_h1000:
-                apply_creek_or_ice(candidate, bars, min(i1, i2), kind, pivots)
-            if best is None or candidate["score"] > best["score"]:
-                best = candidate
-    if force_horiz:
-        horiz = find_best_horizontal(bars, window_size, kind)
-        if horiz and (best is None or horiz["score"] >= (best.get("score") or 0) or best["type"] in ("creek", "ice")):
-            if best is None or horiz["score"] > best["score"]:
-                best = horiz
-            elif best["type"] in ("uptrend", "downtrend") and is_near_horizontal(best["line"], bars, start):
-                best = horiz
-        if best and best["type"] in ("uptrend", "downtrend") and is_near_horizontal(best["line"], bars, start):
-            apply_creek_or_ice(best, bars, start, kind, pivots)
+            if best is None or _line_score(cand) > _line_score(best):
+                best = cand
     return best
 
 
@@ -366,97 +332,61 @@ def make_parallel_channel(L, bars):
     if not L or not L.get("touches"):
         return None
     n = len(bars)
-    eval_start = L.get("start", L.get("drawFrom", L["touches"][0]))
+    lookback = int(L.get("windowSize") or n)
+    win_lo = max(0, n - lookback)
+    last_i = n - 1
     i0 = L.get("drawFrom", L["touches"][0])
-    if i0 >= n - 1:
+    if i0 >= last_i:
         return None
     opp = "resistance" if L["kind"] == "support" else "support"
-    highs, lows = find_pivots(bars, PIVOT_LEFT, PIVOT_RIGHT)
-    pivots = [i for i in (lows if opp == "support" else highs) if i >= eval_start]
+    highs, lows = _pivots_in_lookback(bars, lookback)
+    pts = lows if opp == "support" else highs
     m = L["line"]["m"]
     best = None
-
-    def try_candidate(line, bonus=0):
-        nonlocal best
-        mid = (i0 + n - 1) // 2
-        primary_y = y_at(L["line"], mid)
-        cand_y = y_at(line, mid)
-        if L["kind"] == "support" and cand_y <= primary_y + 1e-9:
-            return
-        if L["kind"] == "resistance" and cand_y >= primary_y - 1e-9:
-            return
-        ev = evaluate_line(bars, eval_start, line, opp, pivots)
-        if not ev["valid"]:
-            return
-        score = len(ev["touches"]) * 10 - ev["bodyBreaks"] * 3 + bonus
-        if best is None or score > best["score"]:
-            best = {
-                "kind": opp,
-                "line": line,
-                "touches": ev["touches"],
-                "bodyBreaks": ev["bodyBreaks"],
-                "wickBreaks": ev["wickBreaks"],
-                "drawFrom": min(i0, ev["touches"][0]),
-                "drawTo": n - 1,
-                "start": eval_start,
-                "windowSize": L["windowSize"],
-                "score": score,
-                "label": "平行通道",
-                "type": "channel",
-                "isParallel": True,
-                "pairOf": L["type"],
-            }
-
-    for i in pivots:
-        if i < i0:
-            continue
+    for i in pts:
+        src_y = y_at(L["line"], i)
         price = bars[i]["l"] if opp == "support" else bars[i]["h"]
-        try_candidate({"m": m, "b": price - m * i})
-    extreme_offset, extreme_i = float("-inf"), i0
-    for i in range(i0, n):
-        y = y_at(L["line"], i)
-        offset = bars[i]["h"] - y if L["kind"] == "support" else y - bars[i]["l"]
-        if offset > extreme_offset:
-            extreme_offset, extreme_i = offset, i
-    if extreme_offset > 0:
-        line = {"m": m, "b": L["line"]["b"] + extreme_offset} if L["kind"] == "support" else {"m": m, "b": L["line"]["b"] - extreme_offset}
-        try_candidate(line, 1)
+        if opp == "resistance" and price < src_y:
+            continue
+        if opp == "support" and price > src_y:
+            continue
+        cand = evaluate_candidate(bars, {"m": m, "b": price - m * i}, opp, win_lo, lookback)
+        if cand is None:
+            continue
+        if best is None or _line_score(cand) > _line_score(best):
+            best = cand
+    if best is None:
+        return None
+    best["type"] = "channel"
+    best["label"] = "平行通道"
+    best["isParallel"] = True
+    best["pairOf"] = L["type"]
+    best["drawFrom"] = min(i0, best["touches"][0])
+    best["drawTo"] = n - 1
     return best
 
 
-def analyze_symbol(bars):
-    up = down = None
-    used = None
-    for w in WINDOWS:
-        if len(bars) < min(w, 80):
-            continue
-        fh = w >= 1000
-        if not up:
-            up = find_best_line(bars, w, "support", fh)
-        if not down:
-            down = find_best_line(bars, w, "resistance", fh)
-        if up and down:
-            used = w
-            break
-        if used is None and (up or down):
-            used = w
-    if not up or not down:
-        for w in WINDOWS:
-            fh = w >= 1000
-            if not up:
-                up = find_best_line(bars, w, "support", fh)
-            if not down:
-                down = find_best_line(bars, w, "resistance", fh)
-            if up and down:
-                used = max(used or 0, w)
+def analyze_symbol(bars, windows=None):
+    windows = list(windows or WINDOWS)
+    n = len(bars)
+    found = {}
+    for kind in ("support", "resistance"):
+        for lookback in windows:
+            actual = min(lookback, n)
+            if actual < 80 and lookback >= 80:
+                continue
+            line = collect_side_line(bars, actual, kind)
+            if line:
+                found[kind] = line
                 break
-    if not up or not down:
-        if not up:
-            up = find_best_horizontal(bars, 1000, "support")
-        if not down:
-            down = find_best_horizontal(bars, 1000, "resistance")
-        if (up or down) and used is None:
-            used = 1000
+            if actual >= n:
+                break
+    up = found.get("support")
+    down = found.get("resistance")
+    used = None
+    for L in (up, down):
+        if L and L.get("windowSize"):
+            used = L["windowSize"] if used is None else max(used, L["windowSize"])
     channel = None
     primary = up if up and not down else (down if down and not up else None)
     if primary:
@@ -559,33 +489,34 @@ def scan_index(index: str, date_str: str, sleep_s: float) -> dict:
     }
 
 
-def recent_signal(row: dict, lookback: int = 5) -> str:
+def recent_signal(row: dict, lookback: int = TREND_SIGNAL_BARS) -> str:
     bars = row.get("bars") or []
     analysis = row.get("analysis") or {}
     if not bars:
         return row.get("error") or "無資料"
     n = len(bars)
     frm = max(0, n - lookback)
-    breakout = touch = False
+    breakout = touch = reclaim = False
     for key in ("up", "down", "channel"):
         L = analysis.get(key)
         if not L or not L.get("line"):
             continue
-        kind = L.get("kind")
+        resistance = L.get("kind") == "resistance"
+        broke_at = -1
         for i in range(frm, n):
             y = y_at(L["line"], i)
             bar = bars[i]
-            tol = abs(y) * TOUCH_TOL_PCT
-            if kind == "support":
-                if body_top(bar) < y - tol:
-                    breakout = True
-                elif (bar["l"] <= y + tol and body_top(bar) >= y - tol) or abs(bar["l"] - y) <= tol:
-                    touch = True
-            else:
-                if body_bot(bar) > y + tol:
-                    breakout = True
-                elif (bar["h"] >= y - tol and body_bot(bar) <= y + tol) or abs(bar["h"] - y) <= tol:
-                    touch = True
+            brk = body_full_cross(bar, y, resistance) or wick_only_cross(bar, y, resistance)
+            if brk:
+                breakout = True
+                if broke_at < 0:
+                    broke_at = i
+            elif is_touch_bar(bar, y, resistance):
+                touch = True
+            if broke_at >= 0 and i >= broke_at and is_reclaim_close(bar, y, resistance):
+                reclaim = True
+    if reclaim:
+        return "收回"
     if breakout:
         return "突破"
     if touch:
