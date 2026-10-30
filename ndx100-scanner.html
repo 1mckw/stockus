@@ -81,48 +81,12 @@
   .topbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 20px;
     padding: 12px 20px;
     border-bottom: 1px solid var(--line);
     background: var(--ground);
     flex-shrink: 0;
-  }
-  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
-  .brand-mark {
-    width: 30px;
-    height: 30px;
-    border: 1px solid var(--line-strong);
-    border-radius: var(--r-sm);
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 3px;
-    padding: 0 6px;
-    flex-shrink: 0;
-  }
-  .brand-mark span {
-    display: block;
-    height: 1px;
-    background: var(--muted);
-  }
-  .brand-mark span:nth-child(1) { width: 100%; background: var(--accent); }
-  .brand-mark span:nth-child(2) { width: 68%; }
-  .brand-mark span:nth-child(3) { width: 84%; }
-  .brand-text h1 {
-    font-size: 19px;
-    font-weight: 600;
-    letter-spacing: -0.015em;
-    line-height: 1.2;
-    white-space: nowrap;
-  }
-  .brand-text h1 span { color: var(--muted); font-weight: 400; }
-  .brand-text p {
-    font-size: 11.5px;
-    color: var(--dim);
-    line-height: 1.3;
-    margin-top: 1px;
-    white-space: nowrap;
   }
 
   .toolbar {
@@ -130,8 +94,9 @@
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
-    justify-content: flex-end;
+    justify-content: flex-start;
     min-width: 0;
+    width: 100%;
   }
   .tool-group {
     display: flex;
@@ -727,7 +692,6 @@
   /* ---------- Responsive ---------- */
   @media (max-width: 1220px) {
     main { grid-template-columns: 248px minmax(0, 1fr); }
-    .brand-text p { display: none; }
     .viewer { padding: 14px 16px 22px; }
   }
   @media (max-width: 980px) {
@@ -827,8 +791,6 @@
     .field select { font-size: 16px; min-height: 28px; }
   }
   @media (max-width: 560px) {
-    .brand-text h1 { font-size: 16px; }
-    .brand-mark { width: 26px; height: 26px; }
     .topbar { gap: 8px; padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 8px; }
     .tool-group {
       width: 100%;
@@ -852,13 +814,6 @@
 <body>
 <div class="app">
   <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
-      <div class="brand-text">
-        <h1>NDX100 <span>掃描器</span></h1>
-        <p>日線 · 四點成線 · 趨勢線 / Creek / Ice</p>
-      </div>
-    </div>
     <div class="toolbar">
       <div class="tool-group" aria-label="存檔">
         <label class="field"><span>日期</span>
@@ -872,15 +827,9 @@
         <button type="button" id="btnOpen" class="pages-hide" disabled>開啟</button>
         <button type="button" id="btnSave" class="pages-hide" disabled>保存</button>
       </div>
-      <div class="tool-group" aria-label="掃描">
-        <label class="field"><span>指數</span>
-          <select id="indexSelect" title="成分股清單">
-            <option value="ndx100">NDX100</option>
-            <option value="dji30">DJI30</option>
-          </select>
-        </label>
-        <button type="button" id="btnScan" class="primary pages-hide">開始掃描</button>
-        <button type="button" id="btnStop" class="ghost-danger pages-hide" disabled>停止</button>
+      <div class="tool-group pages-hide" aria-label="掃描">
+        <button type="button" id="btnScan" class="primary">開始掃描</button>
+        <button type="button" id="btnStop" class="ghost-danger" disabled>停止</button>
       </div>
       <div class="tool-group" aria-label="畫線">
         <button type="button" id="filterIgnoreLast10" class="line-mode" aria-pressed="false" title="另算一套線：所有圖表找線與畫線都不使用最新 10 根">忽略最新10根</button>
@@ -904,7 +853,11 @@
         </div>
         <div class="filter-bar" aria-label="篩選條件">
           <span class="filter-bar-label">篩選</span>
-          <div class="filter-chips" role="group">
+          <div class="filter-chips" role="group" aria-label="指數">
+            <button type="button" class="filter-chip" id="filterIndexNdx" data-index="ndx100" aria-pressed="true">NDX100</button>
+            <button type="button" class="filter-chip" id="filterIndexDji" data-index="dji30" aria-pressed="false">DJI30</button>
+          </div>
+          <div class="filter-chips" role="group" aria-label="訊號">
             <button type="button" class="filter-chip" id="filterBreakout" data-filter="breakout" aria-pressed="false">突破</button>
             <button type="button" class="filter-chip" id="filterReclaim" data-filter="reclaim" aria-pressed="false" title="近 5 根先實體跌破，之後有一根實體完全回到線內">收回</button>
             <button type="button" class="filter-chip" id="filterTouch" data-filter="touch" aria-pressed="false">觸碰</button>
@@ -1031,13 +984,34 @@ function currentIndexConfig() {
   return INDEXES[state.index] || INDEXES.ndx100;
 }
 
+function setIndexChipsDisabled(on) {
+  for (const id of ["filterIndexNdx", "filterIndexDji"]) {
+    const el = $(id);
+    if (el) el.disabled = !!on;
+  }
+}
+
 function syncIndexUi() {
   const cfg = currentIndexConfig();
-  const h1 = document.querySelector(".brand-text h1");
-  if (h1) h1.innerHTML = `${cfg.label} <span>掃描器</span>`;
   document.title = `${cfg.label} 日線掃描器 · 趨勢線 / Creek / Ice`;
-  const sel = $("indexSelect");
-  if (sel && sel.value !== state.index) sel.value = state.index;
+  for (const [id, key] of [["filterIndexNdx", "ndx100"], ["filterIndexDji", "dji30"]]) {
+    const el = $(id);
+    if (!el) continue;
+    const on = state.index === key;
+    el.classList.toggle("active", on);
+    el.setAttribute("aria-pressed", on ? "true" : "false");
+  }
+}
+
+function selectIndex(v) {
+  if (!INDEXES[v] || v === state.index) return;
+  state.index = v;
+  syncIndexUi();
+  state.symbols = [...currentIndexConfig().fallback];
+  refreshSavedPacks().then((dates) => {
+    if (ON_PAGES && dates[0]) openPack(dates[0]);
+    else setStatusText(`已選 ${currentIndexConfig().label} — 選日期後開始掃描`);
+  });
 }
 
 function todayISO() {
@@ -2512,7 +2486,7 @@ async function runScan() {
   $("btnStop").disabled = false;
   $("btnPack").disabled = true;
   $("btnSingle").disabled = true;
-  if ($("indexSelect")) $("indexSelect").disabled = true;
+  setIndexChipsDisabled(true);
   $("resultList").innerHTML = "";
   $("packView").innerHTML = "";
   showPane("emptyHint");
@@ -2565,7 +2539,7 @@ async function runScan() {
   $("btnScan").disabled = false;
   $("btnScan").classList.remove("is-busy");
   $("btnStop").disabled = true;
-  if ($("indexSelect")) $("indexSelect").disabled = false;
+  setIndexChipsDisabled(false);
   updatePackButton();
   const ok = state.results.filter(r => r.bars).length;
   if (ok) {
@@ -2586,16 +2560,8 @@ async function runScan() {
 
 $("packDate").value = todayISO();
 $("packDate").max = todayISO();
-$("indexSelect").onchange = () => {
-  const v = $("indexSelect").value;
-  state.index = INDEXES[v] ? v : "ndx100";
-  syncIndexUi();
-  state.symbols = [...currentIndexConfig().fallback];
-  refreshSavedPacks().then((dates) => {
-    if (ON_PAGES && dates[0]) openPack(dates[0]);
-    else setStatusText(`已選 ${currentIndexConfig().label} — 選日期後開始掃描`);
-  });
-};
+$("filterIndexNdx").onclick = () => selectIndex("ndx100");
+$("filterIndexDji").onclick = () => selectIndex("dji30");
 syncIndexUi();
 $("btnScan").onclick = () => runScan();
 $("btnStop").onclick = () => { state.stop = true; };
