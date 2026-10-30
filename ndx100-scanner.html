@@ -211,6 +211,11 @@
     background: transparent;
   }
   button.is-busy { pointer-events: none; opacity: 0.6; }
+  button.line-mode.active {
+    border-color: var(--accent-line);
+    color: var(--accent);
+    background: rgba(74, 138, 214, 0.1);
+  }
 
   /* ---------- Status strip ---------- */
   .status {
@@ -311,8 +316,9 @@
   }
   .filter-bar {
     display: flex;
-    align-items: center;
-    gap: 8px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
     margin-top: 13px;
   }
   .filter-bar-label {
@@ -320,7 +326,13 @@
     color: var(--dim);
     letter-spacing: 0.06em;
   }
-  .filter-chips { display: flex; gap: 2px; }
+  .filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 4px;
+    width: 100%;
+    min-width: 0;
+  }
   .filter-chip {
     position: relative;
     height: 26px;
@@ -525,7 +537,16 @@
     padding: 10px 12px 10px;
     overflow: hidden;
   }
-  .chart-wrap canvas { display: block; width: 100%; height: auto; }
+  .chart-wrap canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+  }
+  .chart-wrap.is-panning,
+  .chart-wrap.is-panning canvas { cursor: grabbing; }
   .legend {
     display: flex;
     flex-wrap: wrap;
@@ -861,6 +882,9 @@
         <button type="button" id="btnScan" class="primary pages-hide">開始掃描</button>
         <button type="button" id="btnStop" class="ghost-danger pages-hide" disabled>停止</button>
       </div>
+      <div class="tool-group" aria-label="畫線">
+        <button type="button" id="filterIgnoreLast10" class="line-mode" aria-pressed="false" title="另算一套線：所有圖表找線與畫線都不使用最新 10 根">忽略最新10根</button>
+      </div>
     </div>
   </header>
 
@@ -882,7 +906,7 @@
           <span class="filter-bar-label">篩選</span>
           <div class="filter-chips" role="group">
             <button type="button" class="filter-chip" id="filterBreakout" data-filter="breakout" aria-pressed="false">突破</button>
-            <button type="button" class="filter-chip" id="filterReclaim" data-filter="reclaim" aria-pressed="false" title="近 5 根有突破，且其中一根收盤收回線內">收回</button>
+            <button type="button" class="filter-chip" id="filterReclaim" data-filter="reclaim" aria-pressed="false" title="近 5 根先實體跌破，之後有一根實體完全回到線內">收回</button>
             <button type="button" class="filter-chip" id="filterTouch" data-filter="touch" aria-pressed="false">觸碰</button>
           </div>
         </div>
@@ -968,7 +992,9 @@ const CFG = {
   horizSlopePct: 0.015,      // |m|*bars / midPrice < 1.5% → near horizontal
   minTouches: 4,
   windows: [200, 300, 400, 500, 600, 800, 1000], // 做線視窗（由小到大）
+  lineIgnoreLastBars: 10, // 「忽略最新10根」另算線時略過的根數
   chartWindow: 600, // 圖表固定顯示根數
+  chartRightPadBars: 20, // 視窗右緣預留空白（根）
   colors: {
     bg: "#0e0f12",
     grid: "#20232a",
@@ -995,7 +1021,10 @@ const state = {
   stop: false,
   packDate: "",
   view: "single",
-  filters: { breakout: false, reclaim: false, touch: false }
+  filters: { breakout: false, reclaim: false, touch: false },
+  ignoreLast10: false,
+  chartSymbol: null,
+  chartView: null
 };
 
 function currentIndexConfig() {
@@ -1192,9 +1221,9 @@ function wickOnlyCross(bar, lp, resistance) {
     : bar.l < lp && bodyBot(bar) >= lp;
 }
 
-/** 收盤回到線的持有側：支撐收在線上、壓力收在線下 */
-function isReclaimClose(bar, lp, resistance) {
-  return resistance ? bar.c < lp : bar.c > lp;
+/** 整根實體在持有側：支撐實體完全在線上、壓力實體完全在線下 */
+function bodyFullyHeld(bar, lp, resistance) {
+  return resistance ? bodyTop(bar) < lp : bodyBot(bar) > lp;
 }
 
 function mergeTouchIndices(indices) {
@@ -1348,7 +1377,16 @@ function collectSideLine(bars, lookback, kind) {
   return best;
 }
 
-function analyzeSymbol(bars, mode) {
+function lineFitBars(bars, skip) {
+  skip = skip | 0;
+  if (skip <= 0) return bars;
+  const cut = bars.length - skip;
+  if (cut < 80) return bars;
+  return bars.slice(0, cut);
+}
+
+function analyzeSymbol(bars, mode, skipLast = 0) {
+  const fit = lineFitBars(bars, skipLast);
   const windows = mode === "auto"
     ? CFG.windows
     : [parseInt(mode, 10)].filter(Boolean);
@@ -1356,14 +1394,14 @@ function analyzeSymbol(bars, mode) {
   const found = {};
   for (const kind of ["support", "resistance"]) {
     for (const lookback of windows) {
-      const actual = Math.min(lookback, bars.length);
+      const actual = Math.min(lookback, fit.length);
       if (actual < 80 && lookback >= 80) continue;
-      const line = collectSideLine(bars, actual, kind);
+      const line = collectSideLine(fit, actual, kind);
       if (line) {
         found[kind] = line;
         break;
       }
-      if (actual >= bars.length) break;
+      if (actual >= fit.length) break;
     }
   }
 
@@ -1376,7 +1414,7 @@ function analyzeSymbol(bars, mode) {
 
   let channel = null;
   const primary = up && !down ? up : (!up && down ? down : null);
-  if (primary) channel = makeParallelChannel(primary, bars);
+  if (primary) channel = makeParallelChannel(primary, fit);
 
   return { up, down, channel, window: usedWindow, bars };
 }
@@ -1516,19 +1554,31 @@ function drawChart(canvas, bars, analysis, symbol, opts = {}) {
     cssH = Math.max(360, cssH);
   }
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = Math.round(cssW * dpr);
-  canvas.height = Math.round(cssH * dpr);
+  const bw = Math.round(cssW * dpr);
+  const bh = Math.round(cssH * dpr);
+  if (canvas.width !== bw || canvas.height !== bh) {
+    canvas.width = bw;
+    canvas.height = bh;
+  }
   canvas.style.height = cssH + "px";
 
   const ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cssW, cssH);
 
-  const win = Math.min(bars.length, opts.window || (compact ? 260 : (CFG.chartWindow || 600)));
-  const start = Math.max(0, bars.length - win);
-  const view = bars.slice(start);
-  const n = view.length;
-  if (!n) return;
+  const total = bars.length;
+  const rightPad = compact ? 0 : (CFG.chartRightPadBars | 0);
+  const defaultWin = compact ? 260 : (CFG.chartWindow || 600) + rightPad;
+  let win = opts.window || defaultWin;
+  win = Math.max(1, Math.min(compact ? total : total + rightPad, win));
+  let end = opts.end != null ? opts.end : total + rightPad;
+  if (compact) end = Math.max(win, Math.min(total, end));
+  else end = Math.max(win, Math.min(total + win - 1, end));
+  const start = end - win;
+  const n = win;
+  const visFrom = Math.max(0, start);
+  const visTo = Math.min(total, start + n);
+  if (visFrom >= visTo) return;
 
   const pad = compact
     ? { t: 12, r: 54, b: 21, l: 6 }
@@ -1538,24 +1588,35 @@ function drawChart(canvas, bars, analysis, symbol, opts = {}) {
 
   let lo = Infinity;
   let hi = -Infinity;
-  for (const b of view) {
-    lo = Math.min(lo, b.l);
-    hi = Math.max(hi, b.h);
+  for (let i = visFrom; i < visTo; i++) {
+    lo = Math.min(lo, bars[i].l);
+    hi = Math.max(hi, bars[i].h);
   }
   for (const L of lineObjs) {
-    const a = Math.max(start, L.drawFrom ?? L.touches?.[0] ?? start);
-    for (let i = a; i <= start + n - 1; i++) {
+    const a = Math.max(visFrom, L.drawFrom ?? L.touches?.[0] ?? visFrom);
+    const b = visTo - 1;
+    for (let i = a; i <= b; i++) {
       const y = yAt(L.line, i);
       if (Number.isFinite(y)) {
         lo = Math.min(lo, y);
         hi = Math.max(hi, y);
       }
     }
+    const yEnd = yAt(L.line, start + n - 0.5);
+    if (Number.isFinite(yEnd)) {
+      lo = Math.min(lo, yEnd);
+      hi = Math.max(hi, yEnd);
+    }
   }
   if (!Number.isFinite(lo) || !Number.isFinite(hi)) return;
-  const span = hi - lo || Math.abs(hi) * 0.02 || 1;
-  lo -= span * 0.07;
-  hi += span * 0.07;
+  if (!compact && opts.yRange && opts.yRange.hi > opts.yRange.lo) {
+    lo = opts.yRange.lo;
+    hi = opts.yRange.hi;
+  } else {
+    const span = hi - lo || Math.abs(hi) * 0.02 || 1;
+    lo -= span * 0.07;
+    hi += span * 0.07;
+  }
 
   const left = pad.l;
   const top = pad.t;
@@ -1595,8 +1656,10 @@ function drawChart(canvas, bars, analysis, symbol, opts = {}) {
   ctx.font = mono(compact ? 9.5 : 10.5);
   ctx.textBaseline = "top";
   for (let k = 0; k < tickCount; k++) {
-    const idx = Math.round((k / (tickCount - 1)) * (n - 1));
-    const x = Math.round(xAt(idx)) + 0.5;
+    const slot = Math.round((k / (tickCount - 1)) * (n - 1));
+    const di = start + slot;
+    if (di < 0 || di >= total) continue;
+    const x = Math.round(xAt(slot)) + 0.5;
     ctx.strokeStyle = c.grid;
     ctx.lineWidth = 1;
     ctx.save();
@@ -1613,13 +1676,13 @@ function drawChart(canvas, bars, analysis, symbol, opts = {}) {
 
     ctx.fillStyle = c.text;
     ctx.textAlign = k === 0 ? "left" : k === tickCount - 1 ? "right" : "center";
-    ctx.fillText(fmtDate(view[idx].t), x, top + ph + 7);
+    ctx.fillText(fmtDate(bars[di].t), x, top + ph + 7);
   }
 
   /* candles */
-  for (let i = 0; i < n; i++) {
-    const b = view[i];
-    const x = Math.round(xAt(i)) + 0.5;
+  for (let i = visFrom; i < visTo; i++) {
+    const b = bars[i];
+    const x = Math.round(xAt(i - start)) + 0.5;
     const up = b.c >= b.o;
     const color = up ? c.up : c.down;
     ctx.strokeStyle = color;
@@ -1641,8 +1704,9 @@ function drawChart(canvas, bars, analysis, symbol, opts = {}) {
     const color = lineColorOf(L, c);
     const absFrom = L.drawFrom ?? L.touches?.[0] ?? start;
     const iFrom = Math.max(0, absFrom - start);
-    const iTo = n - 1;
-    if (iTo < iFrom) continue;
+    if (iFrom > n - 1) continue;
+    const xRight = left + pw;
+    const iRight = n - 0.5;
 
     ctx.strokeStyle = color;
     ctx.lineWidth = L.type === "channel" ? 1.25 : 1.75;
@@ -1651,7 +1715,7 @@ function drawChart(canvas, bars, analysis, symbol, opts = {}) {
     );
     ctx.beginPath();
     ctx.moveTo(xAt(iFrom), yPx(yAt(L.line, start + iFrom)));
-    ctx.lineTo(xAt(iTo), yPx(yAt(L.line, start + iTo)));
+    ctx.lineTo(xRight, yPx(yAt(L.line, start + iRight)));
     ctx.stroke();
     ctx.setLineDash([]);
 
@@ -1659,7 +1723,7 @@ function drawChart(canvas, bars, analysis, symbol, opts = {}) {
     ctx.strokeStyle = c.bg;
     ctx.lineWidth = 1;
     for (const ti of L.touches || []) {
-      if (ti < start || ti > start + n - 1) continue;
+      if (ti < visFrom || ti >= visTo) continue;
       const px = L.kind === "support" ? bars[ti].l : bars[ti].h;
       ctx.beginPath();
       ctx.arc(xAt(ti - start), yPx(px), compact ? 2 : 2.8, 0, Math.PI * 2);
@@ -1667,7 +1731,7 @@ function drawChart(canvas, bars, analysis, symbol, opts = {}) {
       ctx.stroke();
     }
 
-    const yEnd = yPx(yAt(L.line, start + iTo));
+    const yEnd = yPx(yAt(L.line, start + iRight));
     if (yEnd >= top + 6 && yEnd <= top + ph - 6) {
       let ly = yEnd - 8;
       while (labelYs.some(v => Math.abs(v - ly) < 13)) ly -= 13;
@@ -1684,8 +1748,8 @@ function drawChart(canvas, bars, analysis, symbol, opts = {}) {
     }
   }
 
-  /* last close marker */
-  const last = view[n - 1];
+  /* close marker：跟隨視窗內最右一根實際 K，不鎖死全序列最新根 */
+  const last = bars[visTo - 1];
   const lastY = yPx(last.c);
   ctx.strokeStyle = "rgba(244,245,247,0.28)";
   ctx.lineWidth = 1;
@@ -1712,9 +1776,12 @@ function drawChart(canvas, bars, analysis, symbol, opts = {}) {
   ctx.textBaseline = "middle";
   ctx.fillText(fmtPrice(last.c), left + pw + 5 + chipW / 2, lastY + 0.5);
 
+  canvas._chartMeta = compact ? null : { left, pw, ph, top, start, n, total, lo, hi };
+
   /* title */
   if (!compact) {
-    const dateStr = opts.date || new Date(last.t).toISOString().slice(0, 10);
+    const quote = bars[total - 1];
+    const dateStr = opts.date || new Date(quote.t).toISOString().slice(0, 10);
     const lineWin = analysis?.window || CFG.windows[0];
     const narrow = cssW < 620;
     ctx.textBaseline = "middle";
@@ -1733,13 +1800,13 @@ function drawChart(canvas, bars, analysis, symbol, opts = {}) {
       ctx.fillText(`日線 · ${dateStr} · 顯示 ${win} 根`, left, 40);
     }
 
-    const prev = view[n - 2] || last;
-    const chg = prev.c ? ((last.c - prev.c) / prev.c) * 100 : 0;
+    const prev = bars[total - 2] || quote;
+    const chg = prev.c ? ((quote.c - prev.c) / prev.c) * 100 : 0;
     ctx.textAlign = "right";
     ctx.font = mono(13, 600);
     ctx.fillStyle = c.textStrong;
-    ctx.fillText(fmtPrice(last.c), left + pw, 22);
-    const closeW = ctx.measureText(fmtPrice(last.c)).width;
+    ctx.fillText(fmtPrice(quote.c), left + pw, 22);
+    const closeW = ctx.measureText(fmtPrice(quote.c)).width;
     ctx.font = mono(11, 500);
     ctx.fillStyle = chg >= 0 ? c.up : c.down;
     ctx.fillText(`${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%`, left + pw - closeW - 10, 22);
@@ -1843,31 +1910,30 @@ function setProgress(done, total) {
   $("statusCount").textContent = total ? `${done} / ${total}` : "";
 }
 
-/** 近 lookback 根：突破／收回／觸碰（收回 = 有突破且之後至少一根收盤回到線內） */
+/** 近 lookback 根：突破／收回／觸碰（收回 = 實體跌破後，之後有一根實體完全回到線內） */
 function recentLineEvents(row, lookback = 5) {
-  if (!row?.bars?.length || !row.analysis) return { touch: false, breakout: false, reclaim: false };
+  const analysis = rowAnalysis(row);
+  if (!row?.bars?.length || !analysis) return { touch: false, breakout: false, reclaim: false };
   const bars = row.bars;
   const n = bars.length;
   const from = Math.max(0, n - lookback);
   let touch = false;
   let breakout = false;
   let reclaim = false;
-  const lines = [row.analysis.up, row.analysis.down, row.analysis.channel].filter(Boolean);
+  const lines = [analysis.up, analysis.down, analysis.channel].filter(Boolean);
   for (const L of lines) {
     if (!L.line) continue;
     const resistance = L.kind === "resistance";
-    let brokeAt = -1;
+    let bodyBrokeAt = -1;
     for (let i = from; i < n; i++) {
       const y = yAt(L.line, i);
       const bar = bars[i];
-      const brk = bodyFullCross(bar, y, resistance) || wickOnlyCross(bar, y, resistance);
-      if (brk) {
-        breakout = true;
-        if (brokeAt < 0) brokeAt = i;
-      } else if (isTouchBar(bar, y, resistance)) {
-        touch = true;
-      }
-      if (brokeAt >= 0 && i >= brokeAt && isReclaimClose(bar, y, resistance)) reclaim = true;
+      const bodyBrk = bodyFullCross(bar, y, resistance);
+      const wickBrk = wickOnlyCross(bar, y, resistance);
+      if (bodyBrk || wickBrk) breakout = true;
+      if (bodyBrk && bodyBrokeAt < 0) bodyBrokeAt = i;
+      else if (!bodyBrk && !wickBrk && isTouchBar(bar, y, resistance)) touch = true;
+      if (bodyBrokeAt >= 0 && i > bodyBrokeAt && bodyFullyHeld(bar, y, resistance)) reclaim = true;
     }
   }
   if (reclaim || breakout) touch = false;
@@ -1907,6 +1973,12 @@ function syncFilterChips(opts = {}) {
     el.setAttribute("aria-pressed", on ? "true" : "false");
     if (opts.popKey === key) replayAnim(el, "is-pop");
   }
+  const skipEl = $("filterIgnoreLast10");
+  if (skipEl) {
+    skipEl.classList.toggle("active", !!state.ignoreLast10);
+    skipEl.setAttribute("aria-pressed", state.ignoreLast10 ? "true" : "false");
+    if (opts.popKey === "ignoreLast10") replayAnim(skipEl, "is-pop");
+  }
   const ok = state.results.filter(r => r.bars).length;
   const n = filteredResults().filter(r => r.bars).length;
   const meta = $("filterMeta");
@@ -1915,9 +1987,10 @@ function syncFilterChips(opts = {}) {
     if (state.filters.breakout) tags.push("突破");
     if (state.filters.reclaim) tags.push("收回");
     if (state.filters.touch) tags.push("觸碰");
+    const skip = state.ignoreLast10 ? "略過最新 10 根 · " : "";
     meta.innerHTML = tags.length
-      ? `篩選 <strong>${tags.join(" + ")}</strong> · <strong>${n}</strong> / ${ok} 檔`
-      : `顯示全部 · <strong>${ok}</strong> 檔`;
+      ? `${skip}篩選 <strong>${tags.join(" + ")}</strong> · <strong>${n}</strong> / ${ok} 檔`
+      : `${skip}顯示全部 · <strong>${ok}</strong> 檔`;
     replayAnim(meta, "is-swap");
   }
 }
@@ -1929,14 +2002,12 @@ function applyFilters(opts = {}) {
   if (state.view === "pack" && state.results.some(r => r.bars)) {
     renderPack();
   } else if (state.view === "single" && state.selected) {
-    const row = filteredResults().find(r => r.symbol === state.selected);
-    if (!row) {
-      const first = filteredResults().find(r => r.bars);
-      if (first) {
-        state.selected = first.symbol;
-        showSingle(first);
-        renderList({ animate: true });
-      }
+    const row = filteredResults().find(r => r.symbol === state.selected)
+      || filteredResults().find(r => r.bars);
+    if (row) {
+      state.selected = row.symbol;
+      showSingle(row);
+      renderList({ animate: true });
     }
   }
 }
@@ -2036,6 +2107,15 @@ function renderList(opts = {}) {
   }
 }
 
+function rowAnalysis(row) {
+  if (!row?.bars) return row?.analysis || null;
+  if (!state.ignoreLast10) return row.analysis;
+  if (!row._skipAnalysis) {
+    row._skipAnalysis = analyzeSymbol(row.bars, "auto", CFG.lineIgnoreLastBars);
+  }
+  return row._skipAnalysis;
+}
+
 function analyzeRow(symbol, fullBars, dateStr) {
   const bars = barsAsOf(fullBars, dateStr);
   if (bars.length < 50) throw new Error("該日期前資料不足");
@@ -2043,6 +2123,41 @@ function analyzeRow(symbol, fullBars, dateStr) {
   if (analysis.up) analysis.up.windowSize = analysis.up.windowSize || analysis.window;
   if (analysis.down) analysis.down.windowSize = analysis.down.windowSize || analysis.window;
   return { symbol, bars, analysis };
+}
+
+const CHART_ZOOM_MIN = 20;
+
+function defaultChartView(bars) {
+  const n = bars?.length || 0;
+  const rightPad = CFG.chartRightPadBars | 0;
+  const win = Math.min(n, CFG.chartWindow || 600) + rightPad;
+  return { win, end: n + rightPad };
+}
+
+function clampChartView(bars, view) {
+  const n = bars.length;
+  const rightPad = CFG.chartRightPadBars | 0;
+  const maxWin = n + rightPad;
+  const win = Math.max(Math.min(CHART_ZOOM_MIN, maxWin), Math.min(maxWin, Math.round(view.win)));
+  const end = Math.max(win, Math.min(n + win - 1, Math.round(view.end)));
+  return { win, end };
+}
+
+function applyChartView(bars, next) {
+  state.chartView = clampChartView(bars, next);
+  return state.chartView;
+}
+
+function redrawMainChart(row) {
+  const r = row || state.results.find(x => x.symbol === state.selected);
+  if (!r?.bars || r.error) return;
+  const v = applyChartView(r.bars, state.chartView || defaultChartView(r.bars));
+  drawChart($("mainCanvas"), r.bars, rowAnalysis(r), r.symbol, {
+    date: state.packDate,
+    window: v.win,
+    end: v.end,
+    yRange: state.chartY
+  });
 }
 
 function showSingle(r) {
@@ -2058,7 +2173,7 @@ function showSingle(r) {
     r.symbol || "單圖",
     r.error
       ? String(r.error)
-      : (state.packDate ? `日線 · ${state.packDate}` : "日線單圖")
+      : ((state.packDate ? `日線 · ${state.packDate}` : "日線單圖") + " · 滾輪縮放 · 拖曳平移 · 雙擊還原")
   );
   const wrap = $("mainCanvas")?.closest(".chart-wrap");
   if (r.error || !r.bars) {
@@ -2066,9 +2181,14 @@ function showSingle(r) {
     replayAnim(wrap, "is-swap");
     return;
   }
-  const canvas = $("mainCanvas");
-  drawChart(canvas, r.bars, r.analysis, r.symbol, { date: state.packDate });
-  $("mainLegend").innerHTML = legendHtml(r.analysis);
+  const analysis = rowAnalysis(r);
+  if (state.chartSymbol !== r.symbol) {
+    state.chartSymbol = r.symbol;
+    state.chartView = defaultChartView(r.bars);
+    state.chartY = null;
+  }
+  redrawMainChart(r);
+  $("mainLegend").innerHTML = legendHtml(analysis);
   replayAnim(wrap, "is-swap");
 }
 
@@ -2121,7 +2241,7 @@ function renderPack() {
     head.appendChild(tagBox);
     const info = document.createElement("div");
     info.className = "info";
-    info.innerHTML = legendHtml(r.analysis);
+    info.innerHTML = legendHtml(rowAnalysis(r));
     card.appendChild(head);
     card.appendChild(canvas);
     card.appendChild(info);
@@ -2139,7 +2259,7 @@ function renderPack() {
       }
     };
     box.appendChild(card);
-    drawChart(canvas, r.bars, r.analysis, r.symbol, { date: state.packDate, compact: true });
+    drawChart(canvas, r.bars, rowAnalysis(r), r.symbol, { date: state.packDate, compact: true });
   }
   if (!box.children.length) {
     const active = anyFilterOn();
@@ -2517,6 +2637,10 @@ $("filterTouch").onclick = () => {
   applyFilters({ popKey: "touch" });
 };
 syncFilterChips();
+$("filterIgnoreLast10").onclick = () => {
+  state.ignoreLast10 = !state.ignoreLast10;
+  applyFilters({ popKey: "ignoreLast10" });
+};
 
 /** 視窗尺寸變動時重繪（canvas 依實際寬度計算，避免字被縮小） */
 let __resizeTimer = 0;
@@ -2527,14 +2651,161 @@ function onViewportResize() {
       renderPack();
       return;
     }
-    const row = state.results.find(r => r.symbol === state.selected);
-    if (row?.bars && row.analysis) {
-      drawChart($("mainCanvas"), row.bars, row.analysis, row.symbol, { date: state.packDate });
-    }
+    if (state.view === "single") redrawMainChart();
   }, 160);
 }
 window.addEventListener("resize", onViewportResize);
 window.visualViewport?.addEventListener("resize", onViewportResize);
+
+(function bindMainChartNav() {
+  const canvas = $("mainCanvas");
+  if (!canvas) return;
+  const pts = new Map();
+  let pan = null;
+  let pinch = null;
+
+  function row() {
+    return state.results.find(r => r.symbol === state.selected);
+  }
+
+  function zoomAt(clientX, factor) {
+    const r = row();
+    if (!r?.bars) return;
+    const meta = canvas._chartMeta;
+    const v = state.chartView || defaultChartView(r.bars);
+    const rect = canvas.getBoundingClientRect();
+    let frac = 0.5;
+    if (meta && meta.pw > 0) {
+      frac = (clientX - rect.left - meta.left) / meta.pw;
+      frac = Math.max(0, Math.min(1, frac));
+    }
+    const anchor = (v.end - v.win) + frac * v.win;
+    const win = v.win * factor;
+    const start = anchor - frac * win;
+    state.chartY = null;
+    applyChartView(r.bars, { win, end: start + win });
+    redrawMainChart(r);
+  }
+
+  canvas.addEventListener("wheel", (e) => {
+    if (state.view !== "single") return;
+    e.preventDefault();
+    const factor = e.deltaY > 0 ? 1.14 : 1 / 1.14;
+    zoomAt(e.clientX, factor);
+  }, { passive: false });
+
+  canvas.addEventListener("pointerdown", (e) => {
+    if (state.view !== "single" || e.button !== 0) return;
+    e.preventDefault();
+    canvas.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const r = row();
+    const v = state.chartView || (r?.bars ? defaultChartView(r.bars) : null);
+    const meta = canvas._chartMeta;
+    const wrap = canvas.closest(".chart-wrap");
+    if (pts.size === 1 && v) {
+      pan = {
+        x: e.clientX,
+        y: e.clientY,
+        x0: e.clientX,
+        y0: e.clientY,
+        end: v.end,
+        lo: meta?.lo,
+        hi: meta?.hi,
+        armed: false
+      };
+      pinch = null;
+      wrap?.classList.add("is-panning");
+    } else if (pts.size === 2 && v) {
+      const [a, b] = [...pts.values()];
+      pinch = {
+        dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+        win: v.win,
+        end: v.end,
+        midX: (a.x + b.x) / 2
+      };
+      pan = null;
+    }
+  });
+
+  canvas.addEventListener("pointermove", (e) => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const r = row();
+    if (!r?.bars) return;
+    const meta = canvas._chartMeta;
+    if (pinch && pts.size >= 2) {
+      const [a, b] = [...pts.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const win = pinch.win * (pinch.dist / dist);
+      const meta2 = canvas._chartMeta;
+      let frac = 0.5;
+      if (meta2 && meta2.pw > 0) {
+        const rect = canvas.getBoundingClientRect();
+        frac = (pinch.midX - rect.left - meta2.left) / meta2.pw;
+        frac = Math.max(0, Math.min(1, frac));
+      }
+      const anchor = (pinch.end - pinch.win) + frac * pinch.win;
+      state.chartY = null;
+      applyChartView(r.bars, { win, end: anchor - frac * win + win });
+      redrawMainChart(r);
+      return;
+    }
+    if (!pan || !meta || meta.n < 1) return;
+    if (!pan.armed) {
+      if (Math.hypot(e.clientX - pan.x0, e.clientY - pan.y0) < 5) return;
+      pan.armed = true;
+    }
+    const v = state.chartView || defaultChartView(r.bars);
+    const barW = meta.pw / meta.n;
+    if (barW > 0) {
+      applyChartView(r.bars, { win: v.win, end: pan.end + (pan.x - e.clientX) / barW });
+    }
+    if (meta.ph > 0 && pan.hi > pan.lo) {
+      const dP = ((e.clientY - pan.y) / meta.ph) * (pan.hi - pan.lo);
+      state.chartY = { lo: pan.lo + dP, hi: pan.hi + dP };
+    }
+    redrawMainChart(r);
+  });
+
+  function endPtr(e) {
+    pts.delete(e.pointerId);
+    if (pts.size < 2) pinch = null;
+    if (pts.size === 0) {
+      pan = null;
+      canvas.closest(".chart-wrap")?.classList.remove("is-panning");
+    } else if (pts.size === 1) {
+      const r = row();
+      const v = state.chartView;
+      const p = [...pts.values()][0];
+      const meta = canvas._chartMeta;
+      if (r?.bars && v) {
+        pan = {
+          x: p.x,
+          y: p.y,
+          x0: p.x,
+          y0: p.y,
+          end: v.end,
+          lo: meta?.lo,
+          hi: meta?.hi,
+          armed: true
+        };
+      }
+    }
+  }
+  canvas.addEventListener("pointerup", endPtr);
+  canvas.addEventListener("pointercancel", endPtr);
+
+  canvas.addEventListener("dblclick", (e) => {
+    if (state.view !== "single") return;
+    e.preventDefault();
+    const r = row();
+    if (!r?.bars) return;
+    state.chartView = defaultChartView(r.bars);
+    state.chartY = null;
+    redrawMainChart(r);
+  });
+})();
 
 refreshSavedPacks().then((dates) => {
   if (ON_PAGES && dates[0]) openPack(dates[0]);

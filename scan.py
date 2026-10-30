@@ -184,8 +184,8 @@ def wick_only_cross(bar, lp, resistance):
     return bar["l"] < lp and body_bot(bar) >= lp
 
 
-def is_reclaim_close(bar, lp, resistance):
-    return bar["c"] < lp if resistance else bar["c"] > lp
+def body_fully_held(bar, lp, resistance):
+    return body_top(bar) < lp if resistance else body_bot(bar) > lp
 
 
 def merge_touch_indices(indices):
@@ -502,18 +502,19 @@ def recent_signal(row: dict, lookback: int = TREND_SIGNAL_BARS) -> str:
         if not L or not L.get("line"):
             continue
         resistance = L.get("kind") == "resistance"
-        broke_at = -1
+        body_broke_at = -1
         for i in range(frm, n):
             y = y_at(L["line"], i)
             bar = bars[i]
-            brk = body_full_cross(bar, y, resistance) or wick_only_cross(bar, y, resistance)
-            if brk:
+            body_brk = body_full_cross(bar, y, resistance)
+            wick_brk = wick_only_cross(bar, y, resistance)
+            if body_brk or wick_brk:
                 breakout = True
-                if broke_at < 0:
-                    broke_at = i
-            elif is_touch_bar(bar, y, resistance):
+            if body_brk and body_broke_at < 0:
+                body_broke_at = i
+            elif not body_brk and not wick_brk and is_touch_bar(bar, y, resistance):
                 touch = True
-            if broke_at >= 0 and i >= broke_at and is_reclaim_close(bar, y, resistance):
+            if body_broke_at >= 0 and i > body_broke_at and body_fully_held(bar, y, resistance):
                 reclaim = True
     if reclaim:
         return "收回"
