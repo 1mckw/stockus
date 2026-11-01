@@ -138,6 +138,24 @@
   }
   .field input[type="date"] { min-width: 126px; }
   .field select { min-width: 112px; max-width: 150px; }
+  .field-date-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 0;
+  }
+  .pack-meta {
+    display: none;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    font-style: normal;
+    font-weight: 500;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: min(42vw, 280px);
+  }
 
   button {
     appearance: none;
@@ -684,6 +702,10 @@
 
   html.is-pages .pages-hide,
   body.is-pages .pages-hide { display: none !important; }
+  html.is-pages .status,
+  body.is-pages .status { display: none !important; }
+  html.is-pages .pack-meta,
+  body.is-pages .pack-meta { display: block; }
   html.is-pages .tool-group[aria-label="掃描"],
   body.is-pages .tool-group[aria-label="掃描"] {
     border: 0;
@@ -832,7 +854,10 @@
     <div class="toolbar">
       <div class="tool-group" aria-label="存檔">
         <label class="field"><span>日期</span>
-          <input type="date" id="packDate" />
+          <span class="field-date-row">
+            <input type="date" id="packDate" />
+            <em class="pack-meta" id="packMeta"></em>
+          </span>
         </label>
         <label class="field pages-hide"><span>已存</span>
           <select id="savedPacks" title="已保存的 Chartpack">
@@ -2073,12 +2098,32 @@ function replayAnim(el, cls) {
   el.classList.add(cls);
 }
 
+function pagesStatusBesideDate(text) {
+  const d = state.packDate || $("packDate")?.value || "";
+  let s = String(text || "").trim();
+  if (d) s = s.split(d).join("");
+  s = s
+    .replace(/^已開啟\s*/, "")
+    .replace(/沒有\s*的\s*/g, "")
+    .replace(/^[·•—\-–\s]+/, "")
+    .replace(/\s*[—\-–]\s*/g, " · ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return s;
+}
+
 function setStatusText(text, opts = {}) {
   const el = $("statusText");
-  if (!el) return;
-  if (el.textContent === text) return;
-  el.textContent = text;
-  if (opts.animate !== false) replayAnim(el, "is-swap");
+  if (el && el.textContent !== text) {
+    el.textContent = text;
+    if (opts.animate !== false) replayAnim(el, "is-swap");
+  }
+  const meta = $("packMeta");
+  if (!meta) return;
+  const next = pagesStatusBesideDate(text);
+  if (meta.textContent === next) return;
+  meta.textContent = next;
+  if (opts.animate !== false) replayAnim(meta, "is-swap");
 }
 
 function setViewerTitle(title, sub) {
