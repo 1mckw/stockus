@@ -462,7 +462,7 @@
     align-items: center;
     justify-content: flex-end;
     flex: 1 1 auto;
-    gap: 2px 4px;
+    gap: 8px 12px;
     min-width: 0;
     padding-bottom: 2px;
   }
@@ -470,6 +470,35 @@
     height: 28px;
     font-size: 13px;
     flex: 0 0 auto;
+  }
+  .skip-range {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1 1 168px;
+    max-width: 260px;
+  }
+  .skip-range > span {
+    flex: 0 0 auto;
+    font-size: 13px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .skip-range em {
+    font-style: normal;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    padding: 0 1px;
+  }
+  .skip-range input[type="range"] {
+    flex: 1 1 auto;
+    min-width: 72px;
+    height: 28px;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
   }
   .seg { display: flex; align-items: center; gap: 20px; flex-shrink: 0; }
   .seg button {
@@ -895,8 +924,8 @@
             <button type="button" class="filter-chip" id="filterIndexNdx" data-index="ndx100" aria-pressed="false">NDX100</button>
             <button type="button" class="filter-chip" id="filterIndexDji" data-index="dji30" aria-pressed="false">DJI30</button>
             <button type="button" class="filter-chip" id="filterIndexCrypto" data-index="crypto30" aria-pressed="false">CRYPTO30</button>
-            <button type="button" class="filter-chip" id="filterBreakout" data-filter="breakout" aria-pressed="false" title="近 5 根實體完全穿越趨勢線">突破</button>
-            <button type="button" class="filter-chip" id="filterReclaim" data-filter="reclaim" aria-pressed="false" title="近 5 根先實體跌破，之後有一根實體完全回到線內">收回</button>
+            <button type="button" class="filter-chip" id="filterBreakout" data-filter="breakout" aria-pressed="false" title="忽略之後的近 5 根，實體完全穿越趨勢線">突破</button>
+            <button type="button" class="filter-chip" id="filterReclaim" data-filter="reclaim" aria-pressed="false" title="忽略之後的近 5 根，先實體跌破，之後有一根實體完全回到線內">收回</button>
             <button type="button" class="filter-chip" id="filterTouch" data-filter="touch" aria-pressed="false">觸碰</button>
           </div>
         </div>
@@ -913,10 +942,12 @@
           <p id="viewerSub">選左側代號檢視單圖，或切換 Chartpack</p>
         </div>
         <div class="skip-chips" role="group" aria-label="做線條件">
-          <button type="button" class="filter-chip" id="filterSkip5" data-skip="5" aria-pressed="false" title="找線與畫線不使用最新 5 根">忽略5根</button>
-          <button type="button" class="filter-chip" id="filterSkip10" data-skip="10" aria-pressed="false" title="找線與畫線不使用最新 10 根">忽略10根</button>
-          <button type="button" class="filter-chip" id="filterSkip20" data-skip="20" aria-pressed="false" title="找線與畫線不使用最新 20 根">忽略20根</button>
-          <button type="button" class="filter-chip" id="filterRecent20" data-recent="20" aria-pressed="false" title="至少一觸點須落在最新 20 根內（關掉則改為最新 60 根）">最新20根</button>
+          <label class="skip-range" title="找線與畫線不使用最新 N 根（1–20；0 為不忽略）">
+            <span>忽略<em id="skipLastLabel">0</em>根</span>
+            <input type="range" id="skipLastRange" min="0" max="20" step="1" value="0" />
+          </label>
+          <button type="button" class="filter-chip" id="filterSkipAlso" aria-pressed="false" title="開啟後，突破／收回／觸碰篩選與清單也略過最新 N 根">篩選也忽略</button>
+          <button type="button" class="filter-chip" id="filterNegSlope" aria-pressed="false" title="開啟後支撐／壓力斜率正負不限">斜率可負</button>
         </div>
         <div class="seg" role="group" aria-label="檢視">
           <button type="button" id="btnSingle" disabled>單圖</button>
@@ -1008,7 +1039,7 @@ const CFG = {
   horizSlopePct: 0.015,      // |m|*bars / midPrice < 1.5% → near horizontal
   minTouches: 4,
   windows: [200, 300, 400, 500, 600, 800, 1000], // 做線視窗（由小到大）
-  skipLastBarsOptions: [5, 10, 20],
+  skipLastBarsMax: 20,
   chartWindow: 600, // 圖表固定顯示根數
   chartRightPadBars: 20, // 視窗右緣預留空白（根）
   colors: {
@@ -1046,7 +1077,8 @@ const state = {
   view: "single",
   filters: { breakout: false, reclaim: false, touch: false },
   ignoreLastBars: 0,
-  recentTouchBars: 60,
+  filterSkip: false,
+  allowNegSlope: false,
   chartSymbol: null,
   chartView: null
 };
@@ -1461,8 +1493,7 @@ function formatWhy(kind, miss, noWindow) {
 }
 
 function recentTouchN() {
-  const n = state.recentTouchBars | 0;
-  return n > 0 ? n : (CFG.recentTouchBars || 60);
+  return CFG.recentTouchBars || 60;
 }
 
 function evaluateCandidate(bars, line, kind, winLo, lookback, opts = {}) {
@@ -1522,6 +1553,10 @@ function collectSideLine(bars, lookback, kind, opts = {}) {
       if (i2 - i1 < 5) continue;
       const p1 = kind === "support" ? bars[i1].l : bars[i1].h;
       const p2 = kind === "support" ? bars[i2].l : bars[i2].h;
+      if (!state.allowNegSlope) {
+        if (kind === "support" && p2 < p1) continue;
+        if (kind === "resistance" && p2 > p1) continue;
+      }
       const line = lineThrough(i1, p1, i2, p2);
       const ev = evaluateCandidate(bars, line, kind, winLo, actual, opts);
       if (ev.line) {
@@ -1852,12 +1887,15 @@ function drawChart(canvas, bars, analysis, symbol, opts = {}) {
     ctx.fillText(fmtDate(bars[di].t), x, top + ph + 7);
   }
 
-  /* candles */
+  /* candles — 忽略的最新 N 根降不透明度 */
+  const skipN = opts.skipLast | 0;
+  const skipFrom = skipN > 0 ? total - skipN : Infinity;
   for (let i = visFrom; i < visTo; i++) {
     const b = bars[i];
     const x = Math.round(xAt(i - start)) + 0.5;
     const up = b.c >= b.o;
     const color = up ? c.up : c.down;
+    if (i >= skipFrom) ctx.globalAlpha = 0.28;
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
     ctx.lineWidth = 1;
@@ -1869,6 +1907,7 @@ function drawChart(canvas, bars, analysis, symbol, opts = {}) {
     const y1 = yPx(Math.max(b.o, b.c));
     const y2 = yPx(Math.min(b.o, b.c));
     ctx.fillRect(x - candleW / 2, y1, candleW, Math.max(1, y2 - y1));
+    if (i >= skipFrom) ctx.globalAlpha = 1;
   }
 
   /* trend lines and touches */
@@ -2180,7 +2219,10 @@ function recentLineEvents(row, lookback = 5) {
   if (!row?.bars?.length || !analysis) return { touch: false, breakout: false, reclaim: false };
   const bars = row.bars;
   const n = bars.length;
-  const from = Math.max(0, n - lookback);
+  const skip = state.ignoreLastBars | 0;
+  const end = Math.max(0, n - skip);
+  const from = Math.max(0, end - lookback);
+  if (from >= end) return { touch: false, breakout: false, reclaim: false };
   let touch = false;
   let breakout = false;
   let reclaim = false;
@@ -2189,7 +2231,7 @@ function recentLineEvents(row, lookback = 5) {
     if (!L.line) continue;
     const resistance = L.kind === "resistance";
     let bodyBrokeAt = -1;
-    for (let i = from; i < n; i++) {
+    for (let i = from; i < end; i++) {
       const y = yAt(L.line, i);
       const bar = bars[i];
       const bodyBrk = bodyFullCross(bar, y, resistance);
@@ -2251,20 +2293,24 @@ function syncFilterChips(opts = {}) {
     el.setAttribute("aria-pressed", on ? "true" : "false");
     if (opts.popKey === key) replayAnim(el, "is-pop");
   }
-  for (const nSkip of (CFG.skipLastBarsOptions || [5, 10, 20])) {
-    const el = $("filterSkip" + nSkip);
-    if (!el) continue;
-    const on = state.ignoreLastBars === nSkip;
-    el.classList.toggle("active", on);
-    el.setAttribute("aria-pressed", on ? "true" : "false");
-    if (opts.popKey === "skip" + nSkip) replayAnim(el, "is-pop");
+  const skipRange = $("skipLastRange");
+  const skipLab = $("skipLastLabel");
+  const skipN = state.ignoreLastBars | 0;
+  if (skipRange && (skipRange.value | 0) !== skipN) skipRange.value = String(skipN);
+  if (skipLab) skipLab.textContent = String(skipN);
+  const skipAlso = $("filterSkipAlso");
+  if (skipAlso) {
+    const on = !!state.filterSkip;
+    skipAlso.classList.toggle("active", on);
+    skipAlso.setAttribute("aria-pressed", on ? "true" : "false");
+    if (opts.popKey === "filterSkip") replayAnim(skipAlso, "is-pop");
   }
-  const recent20 = $("filterRecent20");
-  if (recent20) {
-    const on = recentTouchN() === 20;
-    recent20.classList.toggle("active", on);
-    recent20.setAttribute("aria-pressed", on ? "true" : "false");
-    if (opts.popKey === "recent20") replayAnim(recent20, "is-pop");
+  const negSlope = $("filterNegSlope");
+  if (negSlope) {
+    const on = !!state.allowNegSlope;
+    negSlope.classList.toggle("active", on);
+    negSlope.setAttribute("aria-pressed", on ? "true" : "false");
+    if (opts.popKey === "negSlope") replayAnim(negSlope, "is-pop");
   }
   const ok = state.results.filter(r => r.bars).length;
   const n = filteredResults().filter(r => r.bars).length;
@@ -2274,10 +2320,11 @@ function syncFilterChips(opts = {}) {
     if (state.filters.breakout) tags.push("突破");
     if (state.filters.reclaim) tags.push("收回");
     if (state.filters.touch) tags.push("觸碰");
-    const skip = state.ignoreLastBars ? `略過最新 ${state.ignoreLastBars} 根 · ` : "";
-    const recentN = recentTouchN();
-    const recent = recentN === 20 ? `最新 20 根須有觸點 · ` : "";
-    const mode = skip + recent;
+    const skip = state.ignoreLastBars
+      ? `略過最新 ${state.ignoreLastBars} 根${state.filterSkip ? "（篩選也忽略）" : ""} · `
+      : "";
+    const slope = state.allowNegSlope ? "斜率可負 · " : "";
+    const mode = skip + slope;
     meta.innerHTML = tags.length
       ? `${mode}篩選 <strong>${tags.join(" + ")}</strong> · <strong>${n}</strong> / ${ok} 檔`
       : `${mode}顯示全部 · <strong>${ok}</strong> 檔`;
@@ -2406,11 +2453,13 @@ function renderList(opts = {}) {
   }
 }
 
-function rowAnalysis(row) {
+function rowAnalysis(row, skipOverride) {
   if (!row?.bars) return row?.analysis || null;
-  const skip = state.ignoreLastBars | 0;
+  const skip = skipOverride != null
+    ? (skipOverride | 0)
+    : (state.filterSkip ? (state.ignoreLastBars | 0) : 0);
   const recent = recentTouchN();
-  const key = skip + ":" + recent;
+  const key = skip + ":" + recent + ":" + (state.allowNegSlope ? "1" : "0");
   if (!row._skipBy) row._skipBy = {};
   if (!row._skipBy[key]) {
     row._skipBy[key] = analyzeSymbol(row.bars, "auto", skip);
@@ -2454,11 +2503,12 @@ function redrawMainChart(row) {
   const r = row || state.results.find(x => x.symbol === state.selected);
   if (!r?.bars || r.error) return;
   const v = applyChartView(r.bars, state.chartView || defaultChartView(r.bars));
-  drawChart($("mainCanvas"), r.bars, rowAnalysis(r), r.symbol, {
+  drawChart($("mainCanvas"), r.bars, rowAnalysis(r, state.ignoreLastBars), r.symbol, {
     date: state.packDate,
     window: v.win,
     end: v.end,
-    yRange: state.chartY
+    yRange: state.chartY,
+    skipLast: state.ignoreLastBars
   });
 }
 
@@ -2483,7 +2533,7 @@ function showSingle(r) {
     replayAnim(wrap, "is-swap");
     return;
   }
-  const analysis = rowAnalysis(r);
+  const analysis = rowAnalysis(r, state.ignoreLastBars);
   if (state.chartSymbol !== r.symbol) {
     state.chartSymbol = r.symbol;
     state.chartView = defaultChartView(r.bars);
@@ -2561,7 +2611,11 @@ function renderPack() {
       }
     };
     box.appendChild(card);
-    drawChart(canvas, r.bars, rowAnalysis(r), r.symbol, { date: state.packDate, compact: true });
+    drawChart(canvas, r.bars, rowAnalysis(r), r.symbol, {
+      date: state.packDate,
+      compact: true,
+      skipLast: state.filterSkip ? state.ignoreLastBars : 0
+    });
   }
   if (!box.children.length) {
     const active = anyFilterOn();
@@ -3020,19 +3074,43 @@ function applyLineMode(pop) {
   }
   applyFilters(pop);
 }
-function selectSkipLast(n) {
-  state.ignoreLastBars = state.ignoreLastBars === n ? 0 : n;
-  applyLineMode({ popKey: "skip" + n });
+function setSkipLast(n, apply) {
+  const max = CFG.skipLastBarsMax || 20;
+  n = Math.max(0, Math.min(max, n | 0));
+  state.ignoreLastBars = n;
+  const skipLab = $("skipLastLabel");
+  const skipRange = $("skipLastRange");
+  if (skipLab) skipLab.textContent = String(n);
+  if (skipRange && (skipRange.value | 0) !== n) skipRange.value = String(n);
+  if (!apply) return;
+  if (state.filterSkip) applyLineMode({ popKey: "skip" });
+  else {
+    syncFilterChips({ popKey: "skip" });
+    renderList({ animate: true });
+    if (state.view === "pack" && state.results.some(r => r.bars)) renderPack();
+    else if (state.view === "single" && state.selected) {
+      const row = state.results.find(r => r.symbol === state.selected);
+      if (row) showSingle(row);
+    }
+  }
 }
-function selectRecentTouch(n) {
-  const base = CFG.recentTouchBars || 60;
-  state.recentTouchBars = recentTouchN() === n ? base : n;
-  applyLineMode({ popKey: "recent" + n });
+const skipLastRange = $("skipLastRange");
+if (skipLastRange) {
+  skipLastRange.oninput = () => setSkipLast(skipLastRange.value | 0, false);
+  skipLastRange.onchange = () => setSkipLast(skipLastRange.value | 0, true);
 }
-$("filterSkip5").onclick = () => selectSkipLast(5);
-$("filterSkip10").onclick = () => selectSkipLast(10);
-$("filterSkip20").onclick = () => selectSkipLast(20);
-$("filterRecent20").onclick = () => selectRecentTouch(20);
+$("filterSkipAlso").onclick = () => {
+  state.filterSkip = !state.filterSkip;
+  applyFilters({ popKey: "filterSkip" });
+  if (state.view === "single" && state.selected) {
+    const row = state.results.find(r => r.symbol === state.selected);
+    if (row) showSingle(row);
+  }
+};
+$("filterNegSlope").onclick = () => {
+  state.allowNegSlope = !state.allowNegSlope;
+  applyLineMode({ popKey: "negSlope" });
+};
 
 /** 視窗尺寸變動時重繪（canvas 依實際寬度計算，避免字被縮小） */
 let __resizeTimer = 0;

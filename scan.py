@@ -2,7 +2,7 @@
 """Headless NDX100 / DJI30 / CRYPTO30 daily scanner for local use and GitHub Actions.
 
 Trend lines follow the four-point expanding-window rules (same concept as ts):
-  ≥4 merged wick touches; slope sign is not constrained (support/resistance may tilt either way).
+  ≥4 merged wick touches, support slope ≥ 0, resistance slope ≤ 0.
   Draw from the first touch through the latest bar of the search window.
   Creek / Ice naming stays Wyckoff for the existing UI (Creek = support, Ice = resistance).
 """
@@ -394,6 +394,10 @@ def collect_side_line(bars, lookback, kind, min_touches=None, require_recent=Tru
                 continue
             p1 = bars[i1]["l"] if kind == "support" else bars[i1]["h"]
             p2 = bars[i2]["l"] if kind == "support" else bars[i2]["h"]
+            if kind == "support" and p2 < p1:
+                continue
+            if kind == "resistance" and p2 > p1:
+                continue
             line = line_through(i1, p1, i2, p2)
             ev = evaluate_candidate(
                 bars, line, kind, win_lo, actual,
