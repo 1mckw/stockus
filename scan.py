@@ -172,16 +172,16 @@ def is_touch_bar(bar, lp, resistance):
 
 def body_full_cross(bar, lp, resistance):
     if resistance:
-        return body_bot(bar) > lp
-    return body_top(bar) < lp
+        return bar["c"] > lp
+    return bar["c"] < lp
 
 
 def wick_only_cross(bar, lp, resistance):
     if body_full_cross(bar, lp, resistance):
         return False
     if resistance:
-        return bar["h"] > lp and body_top(bar) <= lp
-    return bar["l"] < lp and body_bot(bar) >= lp
+        return bar["h"] > lp
+    return bar["l"] < lp
 
 
 def body_fully_held(bar, lp, resistance):
@@ -330,7 +330,7 @@ def format_why(kind, miss, no_window=False):
     if miss.get("fail") == "breaks":
         bits = []
         if miss["bodyN"] > MAX_BODY_BREAKS:
-            bits.append(f"實體穿越 {miss['bodyN']}（最多 {MAX_BODY_BREAKS}）")
+            bits.append(f"收盤穿越 {miss['bodyN']}（最多 {MAX_BODY_BREAKS}）")
         if miss["wickN"] > MAX_WICK_BREAKS:
             bits.append(f"引線穿越 {miss['wickN']}（最多 {MAX_WICK_BREAKS}）")
         return f"{side}不成線：{'、'.join(bits) or '穿越過多'}"
