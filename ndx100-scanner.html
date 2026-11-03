@@ -451,17 +451,12 @@
     line-height: 1.2;
     color: var(--text);
   }
-  .title-block p {
-    margin-top: 3px;
-    font-size: 12px;
-    color: var(--muted);
-    line-height: 1.4;
-  }
   .skip-chips {
     display: flex;
     align-items: center;
     justify-content: flex-end;
     flex: 1 1 auto;
+    flex-wrap: wrap;
     gap: 8px 12px;
     min-width: 0;
     padding-bottom: 2px;
@@ -471,34 +466,99 @@
     font-size: 13px;
     flex: 0 0 auto;
   }
-  .skip-range {
+  .skip-chips .filter-chip.active {
+    border-color: var(--line-strong);
+    background: var(--raised);
+    border-radius: 999px;
+  }
+  .skip-chips .filter-chip.active::after { display: none; }
+  .skip-cal-wrap { position: relative; flex: 0 0 auto; }
+  .skip-cal {
+    display: none;
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    z-index: 40;
+    width: 232px;
+    padding: 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--line-strong);
+    border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  }
+  .skip-cal-wrap.is-open .skip-cal { display: block; }
+  .skip-cal-head {
     display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    flex: 1 1 168px;
-    max-width: 260px;
-  }
-  .skip-range > span {
-    flex: 0 0 auto;
-    font-size: 13px;
+    align-items: baseline;
+    gap: 6px;
+    padding: 0 6px 10px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
     color: var(--muted);
-    white-space: nowrap;
   }
-  .skip-range em {
+  .skip-cal-head em {
     font-style: normal;
     font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
     color: var(--text);
-    padding: 0 1px;
+    line-height: 1;
   }
-  .skip-range input[type="range"] {
-    flex: 1 1 auto;
-    min-width: 72px;
-    height: 28px;
-    margin: 0;
-    accent-color: var(--accent);
-    cursor: pointer;
+  .skip-cal-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 2px;
+  }
+  .skip-cal-grid button {
+    height: 36px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  .skip-cal-grid button:hover:not(:disabled) {
+    background: var(--raised);
+    border-color: transparent;
+  }
+  .skip-cal-grid button.active {
+    background: var(--accent-line);
+    color: #fff;
+  }
+  .skip-cal-opt {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 32px;
+    margin-top: 10px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+  .skip-cal-opt:hover:not(:disabled) {
+    color: var(--text);
+    background: var(--raised);
+    border-color: transparent;
+  }
+  .skip-cal-opt.active {
+    color: var(--text);
+    background: rgba(74, 138, 214, 0.28);
+  }
+  .skip-cal-opt.active:hover:not(:disabled) {
+    color: var(--text);
+    background: rgba(74, 138, 214, 0.38);
   }
   .seg { display: flex; align-items: center; gap: 20px; flex-shrink: 0; }
   .seg button {
@@ -847,6 +907,15 @@
     }
     .seg { gap: 8px; }
     .seg button.active::after { bottom: 6px; }
+    .skip-cal-grid button {
+      min-height: 36px;
+      height: 36px;
+      padding: 0;
+    }
+    .skip-cal-opt {
+      min-height: 36px;
+      height: 36px;
+    }
     .field input[type="date"],
     .field select { font-size: 16px; min-height: 28px; }
   }
@@ -939,14 +1008,16 @@
       <div class="viewer-toolbar">
         <div class="title-block" id="titleBlock">
           <h2 id="viewerTitle">圖表區</h2>
-          <p id="viewerSub">選左側代號檢視單圖，或切換 Chartpack</p>
         </div>
         <div class="skip-chips" role="group" aria-label="做線條件">
-          <label class="skip-range" title="找線與畫線不使用最新 N 根（1–20；0 為不忽略）">
-            <span>忽略<em id="skipLastLabel">0</em>根</span>
-            <input type="range" id="skipLastRange" min="0" max="20" step="1" value="0" />
-          </label>
-          <button type="button" class="filter-chip" id="filterSkipAlso" aria-pressed="false" title="開啟後，突破／收回／觸碰篩選與清單也略過最新 N 根">篩選也忽略</button>
+          <div class="skip-cal-wrap" id="skipCalWrap">
+            <button type="button" class="filter-chip" id="filterSkipToggle" aria-pressed="false" aria-expanded="false" title="點擊後選擇忽略最新 1–20 根">忽略</button>
+            <div class="skip-cal" id="skipLastPanel">
+              <div class="skip-cal-head">忽略最新 <em id="skipCalValue">0</em> 根</div>
+              <div class="skip-cal-grid" id="skipLastBtns" role="group" aria-label="忽略最新 1 至 20 根"></div>
+              <button type="button" class="skip-cal-opt" id="filterSkipAlso" aria-pressed="false" title="開啟後，突破／收回／觸碰篩選與清單也略過最新 N 根">篩選忽略</button>
+            </div>
+          </div>
           <button type="button" class="filter-chip" id="filterNegSlope" aria-pressed="false" title="開啟後支撐／壓力斜率正負不限">斜率可負</button>
         </div>
         <div class="seg" role="group" aria-label="檢視">
@@ -2165,15 +2236,11 @@ function setStatusText(text, opts = {}) {
   if (opts.animate !== false) replayAnim(meta, "is-swap");
 }
 
-function setViewerTitle(title, sub) {
+function setViewerTitle(title) {
   const t = $("viewerTitle");
-  const s = $("viewerSub");
   const block = $("titleBlock");
-  const same =
-    (t ? t.textContent === title : true) &&
-    (s ? s.textContent === sub : true);
+  const same = t ? t.textContent === title : true;
   if (t) t.textContent = title;
-  if (s) s.textContent = sub;
   if (!same) replayAnim(block, "is-swap");
 }
 
@@ -2293,11 +2360,25 @@ function syncFilterChips(opts = {}) {
     el.setAttribute("aria-pressed", on ? "true" : "false");
     if (opts.popKey === key) replayAnim(el, "is-pop");
   }
-  const skipRange = $("skipLastRange");
-  const skipLab = $("skipLastLabel");
   const skipN = state.ignoreLastBars | 0;
-  if (skipRange && (skipRange.value | 0) !== skipN) skipRange.value = String(skipN);
-  if (skipLab) skipLab.textContent = String(skipN);
+  const skipToggle = $("filterSkipToggle");
+  const skipWrap = $("skipCalWrap");
+  const skipOpen = !!skipWrap?.classList.contains("is-open");
+  const skipVal = $("skipCalValue");
+  if (skipVal) skipVal.textContent = String(skipN);
+  if (skipToggle) {
+    skipToggle.textContent = skipN ? `忽略${skipN}根` : "忽略";
+    skipToggle.classList.toggle("active", skipN > 0 || skipOpen);
+    skipToggle.setAttribute("aria-pressed", skipN > 0 ? "true" : "false");
+    skipToggle.setAttribute("aria-expanded", skipOpen ? "true" : "false");
+    if (opts.popKey === "skip" && skipN > 0) replayAnim(skipToggle, "is-pop");
+  }
+  document.querySelectorAll("#skipLastBtns [data-skip]").forEach(el => {
+    const on = (el.dataset.skip | 0) === skipN;
+    el.classList.toggle("active", on);
+    el.setAttribute("aria-pressed", on ? "true" : "false");
+    if (on && opts.popKey === "skip") replayAnim(el, "is-pop");
+  });
   const skipAlso = $("filterSkipAlso");
   if (skipAlso) {
     const on = !!state.filterSkip;
@@ -2321,7 +2402,7 @@ function syncFilterChips(opts = {}) {
     if (state.filters.reclaim) tags.push("收回");
     if (state.filters.touch) tags.push("觸碰");
     const skip = state.ignoreLastBars
-      ? `略過最新 ${state.ignoreLastBars} 根${state.filterSkip ? "（篩選也忽略）" : ""} · `
+      ? `略過最新 ${state.ignoreLastBars} 根${state.filterSkip ? "（篩選忽略）" : ""} · `
       : "";
     const slope = state.allowNegSlope ? "斜率可負 · " : "";
     const mode = skip + slope;
@@ -3078,11 +3159,10 @@ function setSkipLast(n, apply) {
   const max = CFG.skipLastBarsMax || 20;
   n = Math.max(0, Math.min(max, n | 0));
   state.ignoreLastBars = n;
-  const skipLab = $("skipLastLabel");
-  const skipRange = $("skipLastRange");
-  if (skipLab) skipLab.textContent = String(n);
-  if (skipRange && (skipRange.value | 0) !== n) skipRange.value = String(n);
-  if (!apply) return;
+  if (!apply) {
+    syncFilterChips({ popKey: "skip" });
+    return;
+  }
   if (state.filterSkip) applyLineMode({ popKey: "skip" });
   else {
     syncFilterChips({ popKey: "skip" });
@@ -3094,12 +3174,48 @@ function setSkipLast(n, apply) {
     }
   }
 }
-const skipLastRange = $("skipLastRange");
-if (skipLastRange) {
-  skipLastRange.oninput = () => setSkipLast(skipLastRange.value | 0, false);
-  skipLastRange.onchange = () => setSkipLast(skipLastRange.value | 0, true);
+function setSkipPickerOpen(on) {
+  const wrap = $("skipCalWrap");
+  if (wrap) wrap.classList.toggle("is-open", !!on);
+  syncFilterChips();
 }
-$("filterSkipAlso").onclick = () => {
+function selectSkipLast(n) {
+  setSkipLast(state.ignoreLastBars === n ? 0 : n, true);
+  setSkipPickerOpen(false);
+}
+function buildSkipButtons() {
+  const box = $("skipLastBtns");
+  if (!box) return;
+  box.innerHTML = "";
+  const max = CFG.skipLastBarsMax || 20;
+  for (let n = 1; n <= max; n++) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.dataset.skip = String(n);
+    b.textContent = String(n);
+    b.title = `找線與畫線不使用最新 ${n} 根（再點一次取消）`;
+    b.setAttribute("aria-pressed", "false");
+    b.onclick = () => selectSkipLast(n);
+    box.appendChild(b);
+  }
+}
+buildSkipButtons();
+$("filterSkipToggle").onclick = (e) => {
+  e.stopPropagation();
+  const wrap = $("skipCalWrap");
+  setSkipPickerOpen(!wrap?.classList.contains("is-open"));
+};
+document.addEventListener("click", (e) => {
+  const wrap = $("skipCalWrap");
+  if (!wrap?.classList.contains("is-open")) return;
+  if (wrap.contains(e.target)) return;
+  setSkipPickerOpen(false);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") setSkipPickerOpen(false);
+});
+$("filterSkipAlso").onclick = (e) => {
+  e.stopPropagation();
   state.filterSkip = !state.filterSkip;
   applyFilters({ popKey: "filterSkip" });
   if (state.view === "single" && state.selected) {
