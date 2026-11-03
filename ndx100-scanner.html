@@ -895,8 +895,8 @@
             <button type="button" class="filter-chip" id="filterIndexNdx" data-index="ndx100" aria-pressed="false">NDX100</button>
             <button type="button" class="filter-chip" id="filterIndexDji" data-index="dji30" aria-pressed="false">DJI30</button>
             <button type="button" class="filter-chip" id="filterIndexCrypto" data-index="crypto30" aria-pressed="false">CRYPTO30</button>
-            <button type="button" class="filter-chip" id="filterBreakout" data-filter="breakout" aria-pressed="false" title="近 5 根收盤價穿越趨勢線">突破</button>
-            <button type="button" class="filter-chip" id="filterReclaim" data-filter="reclaim" aria-pressed="false" title="近 5 根先收盤穿越，之後有一根實體完全回到線內">收回</button>
+            <button type="button" class="filter-chip" id="filterBreakout" data-filter="breakout" aria-pressed="false" title="近 5 根實體完全穿越趨勢線">突破</button>
+            <button type="button" class="filter-chip" id="filterReclaim" data-filter="reclaim" aria-pressed="false" title="近 5 根先實體跌破，之後有一根實體完全回到線內">收回</button>
             <button type="button" class="filter-chip" id="filterTouch" data-filter="touch" aria-pressed="false">觸碰</button>
           </div>
         </div>
@@ -1003,7 +1003,7 @@ const CFG = {
   touchMergeBars: 5,         // 相鄰 ≤5 根內的觸點合併為 1
   maxTouchGapBars: 120,      // 相鄰觸點間隔不得超過 120 根 K
   recentTouchBars: 60,       // 至少一觸點須落在最新 60 根內（常開）
-  maxBodyBreaks: 3,          // 成形後收盤價穿越最多 3 根
+  maxBodyBreaks: 3,          // 成形後實體穿越最多 3 根
   maxWickBreaks: 5,          // 成形後引線穿越最多 5 根
   horizSlopePct: 0.015,      // |m|*bars / midPrice < 1.5% → near horizontal
   minTouches: 4,
@@ -1284,12 +1284,14 @@ function isTouchBar(bar, lp, resistance) {
 }
 
 function bodyFullCross(bar, lp, resistance) {
-  return resistance ? bar.c > lp : bar.c < lp;
+  return resistance ? bodyBot(bar) > lp : bodyTop(bar) < lp;
 }
 
 function wickOnlyCross(bar, lp, resistance) {
   if (bodyFullCross(bar, lp, resistance)) return false;
-  return resistance ? bar.h > lp : bar.l < lp;
+  return resistance
+    ? bar.h > lp && bodyTop(bar) <= lp
+    : bar.l < lp && bodyBot(bar) >= lp;
 }
 
 /** 整根實體在持有側：支撐實體完全在線上、壓力實體完全在線下 */
@@ -1447,7 +1449,7 @@ function formatWhy(kind, miss, noWindow) {
   if (!miss || miss.tried <= 0) return `${side}不成線：沒有可用樞軸錨點`;
   if (miss.fail === "breaks") {
     const bits = [];
-    if (miss.bodyN > CFG.maxBodyBreaks) bits.push(`收盤穿越 ${miss.bodyN}（最多 ${CFG.maxBodyBreaks}）`);
+    if (miss.bodyN > CFG.maxBodyBreaks) bits.push(`實體穿越 ${miss.bodyN}（最多 ${CFG.maxBodyBreaks}）`);
     if (miss.wickN > CFG.maxWickBreaks) bits.push(`引線穿越 ${miss.wickN}（最多 ${CFG.maxWickBreaks}）`);
     return `${side}不成線：${bits.join("、") || "穿越過多"}`;
   }
@@ -1587,7 +1589,7 @@ function analyzeSymbol(bars, mode, skipLast = 0) {
 }
 
 /**
- * 單邊才找平行通道：同斜率、對側樞軸錨點，四點／收盤破≤3／引線破≤5。
+ * 單邊才找平行通道：同斜率、對側樞軸錨點，四點／實體破≤3／引線破≤5。
  */
 function makeParallelChannel(L, bars) {
   if (!L?.touches?.length) return { line: null, miss: emptyMiss() };
@@ -2057,7 +2059,7 @@ function legendHtml(analysis) {
       L.type === "uptrend" ? "c-up" : "c-down";
     const name = L.type === "channel" ? "平行通道" : L.label;
     parts.push(
-      `<span class="lg ${cls}"><b>${name}</b><em>${L.touches.length} 觸點 · 收盤 ${L.bodyBreaks} · 引線 ${L.wickBreaks ?? 0} · ${L.windowSize}K</em></span>`
+      `<span class="lg ${cls}"><b>${name}</b><em>${L.touches.length} 觸點 · 實體 ${L.bodyBreaks} · 引線 ${L.wickBreaks ?? 0} · ${L.windowSize}K</em></span>`
     );
   };
   const addWhy = (text) => {
@@ -2172,7 +2174,7 @@ function setProgress(done, total) {
   $("statusCount").textContent = total ? `${done} / ${total}` : "";
 }
 
-/** 近 lookback 根：突破／收回／觸碰（突破 = 收盤穿越；收回 = 收盤穿越後，之後有一根實體完全回到線內） */
+/** 近 lookback 根：突破／收回／觸碰（突破 = 實體完全穿越；收回 = 實體跌破後，之後有一根實體完全回到線內） */
 function recentLineEvents(row, lookback = 5) {
   const analysis = rowAnalysis(row);
   if (!row?.bars?.length || !analysis) return { touch: false, breakout: false, reclaim: false };
