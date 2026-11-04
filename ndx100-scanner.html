@@ -46,15 +46,14 @@
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: auto; min-height: 100%; }
+  html, body { height: 100%; }
   body {
     font-family: var(--sans);
     font-size: 14px;
     line-height: 1.5;
     color: var(--text);
     background: var(--ground);
-    overflow-x: hidden;
-    overflow-y: auto;
+    overflow: hidden;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     -webkit-tap-highlight-color: transparent;
@@ -72,10 +71,10 @@
 
   .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
   .app {
-    min-height: 100dvh;
+    height: 100dvh;
     min-width: 0;
     display: grid;
-    grid-template-rows: auto auto auto;
+    grid-template-rows: auto auto minmax(0, 1fr);
   }
 
   /* ---------- Header ---------- */
@@ -256,14 +255,17 @@
     display: grid;
     grid-template-columns: 284px minmax(0, 1fr);
     min-width: 0;
-    overflow: visible;
-    align-items: start;
+    min-height: 0;
+    overflow: hidden;
+    align-items: stretch;
   }
 
   /* ---------- Sidebar ---------- */
   .sidebar {
     display: flex;
     flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
     border-right: 1px solid var(--line);
     background: var(--surface);
   }
@@ -366,7 +368,10 @@
     color: var(--dim);
   }
   #resultList {
-    overflow: visible;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
   #resultList:empty::before {
     content: "尚無結果";
@@ -422,13 +427,24 @@
   .tag.is-reclaim { color: var(--pos); }
   .tag.is-touch { color: var(--ice); }
   .tag.is-err { color: var(--dim); }
+  .pack-card header .tag,
+  .pack-past .tag {
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 0 4px;
+  }
+  .pack-card header .tag.is-filter,
+  .pack-past .tag.is-filter {
+    background: color-mix(in srgb, currentColor 18%, transparent);
+  }
 
   /* ---------- Viewer ---------- */
   .viewer {
     display: flex;
     flex-direction: column;
     min-width: 0;
-    overflow: visible;
+    min-height: 0;
+    overflow: hidden;
     padding: 16px 22px 26px;
     background: var(--ground);
   }
@@ -583,7 +599,12 @@
     background: var(--accent-line);
   }
 
-  .viewer-stage { position: relative; min-height: 320px; }
+  .viewer-stage {
+    position: relative;
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow: auto;
+  }
   .view-pane {
     position: absolute;
     left: 0;
@@ -625,6 +646,70 @@
   }
   .chart-wrap.is-panning,
   .chart-wrap.is-panning canvas { cursor: grabbing; }
+  #singleView.is-on {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 176px;
+    gap: 12px;
+    align-items: start;
+  }
+  .signal-cases {
+    min-width: 0;
+    padding: 10px 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+  }
+  .signal-cases h3 {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 8px;
+  }
+  .signal-cases .case-empty,
+  .pack-past .case-empty {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.45;
+  }
+  .signal-case {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    height: 30px;
+    padding: 0 8px;
+    margin: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    font-size: 12.5px;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+  }
+  .signal-case:hover:not(:disabled) {
+    background: var(--raised);
+    border-color: transparent;
+  }
+  .signal-case.is-on {
+    background: var(--raised);
+  }
+  .signal-case .skip {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    flex: 0 0 auto;
+  }
+  .signal-case .tags {
+    display: flex;
+    gap: 6px;
+    flex: 0 0 auto;
+    font-size: 11px;
+  }
   .legend {
     display: flex;
     flex-wrap: wrap;
@@ -722,6 +807,19 @@
     color: var(--muted);
   }
   .pack-card .info .lg b { font-size: 11.5px; }
+  .pack-past {
+    padding: 8px 10px 10px;
+    border-top: 1px solid var(--rule);
+  }
+  .pack-past h4 {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 6px;
+  }
+  .pack-past .signal-case { height: 26px; font-size: 12px; }
 
   /* ---------- Empty ---------- */
   .empty {
@@ -815,7 +913,11 @@
     .viewer { padding: 14px 16px 22px; }
   }
   @media (max-width: 980px) {
+    html, body { height: auto; min-height: 100%; }
+    body { overflow-x: hidden; overflow-y: auto; }
     .app {
+      height: auto;
+      min-height: 100dvh;
       padding-left: env(safe-area-inset-left);
       padding-right: env(safe-area-inset-right);
     }
@@ -844,10 +946,13 @@
     main {
       grid-template-columns: minmax(0, 1fr);
       grid-template-rows: auto auto;
+      overflow: visible;
+      min-height: 0;
     }
     .sidebar {
       order: 0;
       max-height: none;
+      overflow: visible;
       border-right: 0;
       border-bottom: 1px solid var(--line);
       background: var(--surface);
@@ -855,9 +960,12 @@
     .viewer {
       order: 1;
       min-height: 0;
+      overflow: visible;
       padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px));
     }
     .viewer-stage { min-height: 240px; flex: 1; }
+    #singleView.is-on { grid-template-columns: minmax(0, 1fr); }
+    .signal-case { min-height: 36px; height: 36px; }
     .pack-grid { grid-template-columns: minmax(0, 1fr); }
     .title-block h2 { font-size: 17px; }
     .list-head { display: none; }
@@ -865,6 +973,7 @@
     .filter-bar { margin-top: 8px; }
     #resultList {
       display: flex;
+      flex: none;
       flex-direction: row;
       overflow-x: auto;
       overflow-y: hidden;
@@ -993,9 +1102,10 @@
             <button type="button" class="filter-chip" id="filterIndexNdx" data-index="ndx100" aria-pressed="false">NDX100</button>
             <button type="button" class="filter-chip" id="filterIndexDji" data-index="dji30" aria-pressed="false">DJI30</button>
             <button type="button" class="filter-chip" id="filterIndexCrypto" data-index="crypto30" aria-pressed="false">CRYPTO30</button>
-            <button type="button" class="filter-chip" id="filterBreakout" data-filter="breakout" aria-pressed="false" title="忽略之後的近 5 根，實體完全穿越趨勢線">突破</button>
-            <button type="button" class="filter-chip" id="filterReclaim" data-filter="reclaim" aria-pressed="false" title="忽略之後的近 5 根，先實體跌破，之後有一根實體完全回到線內">收回</button>
+            <button type="button" class="filter-chip" id="filterBreakout" data-filter="breakout" aria-pressed="false" title="忽略最新 0 根的近 5 根，實體完全穿越趨勢線。加上「過去訊號」則改看忽略 1–20 根">突破</button>
+            <button type="button" class="filter-chip" id="filterReclaim" data-filter="reclaim" aria-pressed="false" title="忽略最新 0 根的近 5 根，先實體跌破再收回。加上「過去訊號」則改看忽略 1–20 根">收回</button>
             <button type="button" class="filter-chip" id="filterTouch" data-filter="touch" aria-pressed="false">觸碰</button>
+            <button type="button" class="filter-chip" id="filterPast" data-filter="past" aria-pressed="false" title="忽略 1–20 根內曾出現突破或收回；與突破／收回同時開時只看該種訊號">過去訊號</button>
           </div>
         </div>
         <span class="filter-meta" id="filterMeta">顯示全部</span>
@@ -1036,6 +1146,10 @@
             <canvas id="mainCanvas" width="1200" height="672"></canvas>
             <div class="legend" id="mainLegend"></div>
           </div>
+          <aside class="signal-cases" id="signalCases" aria-label="過去訊號">
+            <h3>過去訊號</h3>
+            <div id="signalCaseList"></div>
+          </aside>
         </div>
         <div id="packView" class="pack-grid view-pane"></div>
       </div>
@@ -1146,7 +1260,7 @@ const state = {
   stop: false,
   packDate: "",
   view: "single",
-  filters: { breakout: false, reclaim: false, touch: false },
+  filters: { breakout: false, reclaim: false, touch: false, past: false },
   ignoreLastBars: 0,
   filterSkip: false,
   allowNegSlope: false,
@@ -1624,7 +1738,8 @@ function collectSideLine(bars, lookback, kind, opts = {}) {
       if (i2 - i1 < 5) continue;
       const p1 = kind === "support" ? bars[i1].l : bars[i1].h;
       const p2 = kind === "support" ? bars[i2].l : bars[i2].h;
-      if (!state.allowNegSlope) {
+      const allowNeg = opts.allowNegSlope != null ? !!opts.allowNegSlope : !!state.allowNegSlope;
+      if (!allowNeg) {
         if (kind === "support" && p2 < p1) continue;
         if (kind === "resistance" && p2 > p1) continue;
       }
@@ -1648,11 +1763,12 @@ function lineFitBars(bars, skip) {
   return bars.slice(0, cut);
 }
 
-function analyzeSymbol(bars, mode, skipLast = 0) {
+function analyzeSymbol(bars, mode, skipLast = 0, fitOpts = {}) {
   const fit = lineFitBars(bars, skipLast);
   const windows = mode === "auto"
     ? CFG.windows
     : [parseInt(mode, 10)].filter(Boolean);
+  const allowNeg = fitOpts.allowNegSlope != null ? !!fitOpts.allowNegSlope : !!state.allowNegSlope;
 
   const found = {};
   const why = { support: null, resistance: null, channel: null };
@@ -1663,7 +1779,7 @@ function analyzeSymbol(bars, mode, skipLast = 0) {
       const actual = Math.min(lookback, fit.length);
       if (actual < 80 && lookback >= 80) continue;
       windowsTried++;
-      const got = collectSideLine(fit, actual, kind, opts);
+      const got = collectSideLine(fit, actual, kind, { ...opts, allowNegSlope: allowNeg });
       if (got.line) return { line: got.line, miss: null, windowsTried };
       miss = mergeMiss(miss, got.miss);
       if (actual >= fit.length) break;
@@ -1691,7 +1807,15 @@ function analyzeSymbol(bars, mode, skipLast = 0) {
     if (!channel) why.channel = formatWhy("channel", ch.miss);
   }
 
-  return { up, down, channel, window: usedWindow, bars, why };
+  const out = { up, down, channel, window: usedWindow, bars, why, autoNegSlope: false };
+  if (!allowNeg && !fitOpts._noRetry && !up && !down) {
+    const retry = analyzeSymbol(bars, mode, skipLast, { allowNegSlope: true, _noRetry: true });
+    if (retry.up || retry.down) {
+      retry.autoNegSlope = true;
+      return retry;
+    }
+  }
+  return out;
 }
 
 /**
@@ -2184,6 +2308,9 @@ function legendHtml(analysis) {
   if (!analysis?.down) addWhy(analysis?.why?.resistance);
   add(analysis?.channel);
   if (analysis?.why?.channel && !analysis?.channel) addWhy(analysis.why.channel);
+  if (analysis?.autoNegSlope) {
+    parts.push(`<span class="lg is-why"><b>斜率可負</b><em>不成線時自動開啟</em></span>`);
+  }
   if (!parts.length) {
     parts.push("<span class=\"lg is-why\"><b>不成線</b><em>此視窗未能形成有效四點趨勢線</em></span>");
   }
@@ -2242,6 +2369,16 @@ function setViewerTitle(title) {
   const same = t ? t.textContent === title : true;
   if (t) t.textContent = title;
   if (!same) replayAnim(block, "is-swap");
+}
+
+function scrollPageTop() {
+  const stage = document.querySelector(".viewer-stage");
+  if (stage) stage.scrollTop = 0;
+  const viewer = document.querySelector(".viewer");
+  if (viewer) viewer.scrollTop = 0;
+  window.scrollTo(0, 0);
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
 }
 
 /** 檢視區面板切換（empty / single / pack） */
@@ -2313,8 +2450,185 @@ function recentLineEvents(row, lookback = 5) {
   return { touch, breakout, reclaim };
 }
 
+function recentLineEventsAt(row, skip, lookback = 5) {
+  const analysis = rowAnalysis(row, skip);
+  if (!row?.bars?.length || !analysis) return { touch: false, breakout: false, reclaim: false };
+  const bars = row.bars;
+  const n = bars.length;
+  const end = Math.max(0, n - (skip | 0));
+  const from = Math.max(0, end - lookback);
+  if (from >= end) return { touch: false, breakout: false, reclaim: false };
+  let touch = false;
+  let breakout = false;
+  let reclaim = false;
+  const lines = [analysis.up, analysis.down, analysis.channel].filter(Boolean);
+  for (const L of lines) {
+    if (!L.line) continue;
+    const resistance = L.kind === "resistance";
+    let bodyBrokeAt = -1;
+    for (let i = from; i < end; i++) {
+      const y = yAt(L.line, i);
+      const bar = bars[i];
+      const bodyBrk = bodyFullCross(bar, y, resistance);
+      const wickBrk = wickOnlyCross(bar, y, resistance);
+      if (bodyBrk) breakout = true;
+      if (bodyBrk && bodyBrokeAt < 0) bodyBrokeAt = i;
+      else if (!bodyBrk && !wickBrk && isTouchBar(bar, y, resistance)) touch = true;
+      if (bodyBrokeAt >= 0 && i > bodyBrokeAt && bodyFullyHeld(bar, y, resistance)) reclaim = true;
+    }
+  }
+  if (reclaim || breakout) touch = false;
+  return { touch, breakout, reclaim };
+}
+
+function casesKey() {
+  return state.allowNegSlope ? "1" : "0";
+}
+
+function collectSignalCases(row) {
+  if (!row?.bars) return [];
+  const key = casesKey();
+  if (!row._casesBy) row._casesBy = {};
+  if (row._casesBy[key]) return row._casesBy[key];
+  const max = CFG.skipLastBarsMax || 20;
+  const out = [];
+  for (let skip = 0; skip <= max; skip++) {
+    const ev = recentLineEventsAt(row, skip);
+    if (ev.breakout || ev.reclaim) out.push({ skip, breakout: ev.breakout, reclaim: ev.reclaim });
+  }
+  row._casesBy[key] = out;
+  if (!row._hasPast) row._hasPast = {};
+  row._hasPast[key] = out.length > 0;
+  if (!row._hasKind) row._hasKind = {};
+  row._hasKind[key] = {
+    breakout: out.some(c => c.breakout),
+    reclaim: out.some(c => c.reclaim)
+  };
+  return out;
+}
+
+function signalSkipWindow() {
+  const max = CFG.skipLastBarsMax || 20;
+  if (state.filters.past) return { lo: 1, hi: max };
+  if (state.filters.breakout || state.filters.reclaim) return { lo: 0, hi: 0 };
+  return null;
+}
+
+function kindWanted() {
+  const breakout = !!state.filters.breakout;
+  const reclaim = !!state.filters.reclaim;
+  if (breakout || reclaim) return { breakout, reclaim };
+  if (state.filters.past) return { breakout: true, reclaim: true };
+  return { breakout: false, reclaim: false };
+}
+
+function caseKindHit(c, kinds) {
+  return (kinds.breakout && c.breakout) || (kinds.reclaim && c.reclaim);
+}
+
+function hasKindInSkips(row, kinds, lo, hi) {
+  if (!row?.bars || row.error) return false;
+  const key = casesKey();
+  if (row._casesBy?.[key]) {
+    return row._casesBy[key].some(c => c.skip >= lo && c.skip <= hi && caseKindHit(c, kinds));
+  }
+  try {
+    for (let skip = lo; skip <= hi; skip++) {
+      const ev = recentLineEventsAt(row, skip);
+      if (caseKindHit(ev, kinds)) return true;
+    }
+  } catch (e) { /* keep false */ }
+  return false;
+}
+
+function applySignalCase(row, skip) {
+  if (!row) return;
+  state.filterSkip = true;
+  state.selected = row.symbol;
+  state.ignoreLastBars = skip | 0;
+  showSingle(row);
+  setView("single");
+  syncFilterChips({ popKey: "skip" });
+}
+
+function toggleFilterFromTag(kind, e) {
+  if (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+  if (!Object.prototype.hasOwnProperty.call(state.filters, kind)) return;
+  state.filters[kind] = !state.filters[kind];
+  applyFilters({ popKey: kind });
+}
+
+function addFilterTag(box, kind, label, cls) {
+  const t = document.createElement("span");
+  t.className = "tag " + cls + (state.filters[kind] ? " is-filter" : "");
+  t.textContent = label;
+  t.title = "篩選" + label;
+  t.onclick = (e) => toggleFilterFromTag(kind, e);
+  box.appendChild(t);
+}
+
+function caseMatchesFilter(c) {
+  const win = signalSkipWindow();
+  if (!win) return true;
+  if (c.skip < win.lo || c.skip > win.hi) return false;
+  return caseKindHit(c, kindWanted());
+}
+
+function fillSignalCases(box, row, opts = {}) {
+  box.innerHTML = "";
+  if (!row?.bars || row.error) {
+    if (!opts.compact) {
+      const p = document.createElement("p");
+      p.className = "case-empty";
+      p.textContent = "無資料";
+      box.appendChild(p);
+    }
+    return false;
+  }
+  const cases = collectSignalCases(row).filter(caseMatchesFilter);
+  const cur = state.ignoreLastBars | 0;
+  if (!cases.length) {
+    if (!opts.compact) {
+      const p = document.createElement("p");
+      p.className = "case-empty";
+      p.textContent = "忽略 0–20 根下沒有突破／收回";
+      box.appendChild(p);
+    }
+    return false;
+  }
+  for (const c of cases) {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "signal-case" + (c.skip === cur ? " is-on" : "");
+    const skipEl = document.createElement("span");
+    skipEl.className = "skip";
+    skipEl.textContent = c.skip ? `忽略${c.skip}` : "不忽略";
+    const tags = document.createElement("span");
+    tags.className = "tags";
+    if (c.reclaim) addFilterTag(tags, "reclaim", "收回", "is-reclaim");
+    if (c.breakout) addFilterTag(tags, "breakout", "突破", "is-break");
+    el.appendChild(skipEl);
+    el.appendChild(tags);
+    el.onclick = (e) => {
+      if (opts.stop) e.stopPropagation();
+      applySignalCase(row, c.skip);
+    };
+    box.appendChild(el);
+  }
+  return true;
+}
+
+function renderSignalCases(row) {
+  const box = $("signalCaseList");
+  if (!box) return;
+  fillSignalCases(box, row);
+}
+
 function anyFilterOn() {
-  return !!(state.filters.breakout || state.filters.reclaim || state.filters.touch);
+  return !!(state.filters.breakout || state.filters.reclaim || state.filters.touch || state.filters.past);
 }
 
 function rowIndexes(row) {
@@ -2334,11 +2648,10 @@ function matchesFilters(row) {
   if (!matchesIndex(row)) return false;
   if (!anyFilterOn()) return true;
   if (row.error || !row.bars) return false;
-  const ev = recentLineEvents(row);
   const want = [];
-  if (state.filters.breakout) want.push(ev.breakout);
-  if (state.filters.reclaim) want.push(ev.reclaim);
-  if (state.filters.touch) want.push(ev.touch);
+  const win = signalSkipWindow();
+  if (win) want.push(hasKindInSkips(row, kindWanted(), win.lo, win.hi));
+  if (state.filters.touch) want.push(recentLineEvents(row).touch);
   return want.some(Boolean);
 }
 
@@ -2350,7 +2663,8 @@ function syncFilterChips(opts = {}) {
   const map = [
     ["filterBreakout", "breakout"],
     ["filterReclaim", "reclaim"],
-    ["filterTouch", "touch"]
+    ["filterTouch", "touch"],
+    ["filterPast", "past"]
   ];
   for (const [id, key] of map) {
     const el = $(id);
@@ -2388,19 +2702,24 @@ function syncFilterChips(opts = {}) {
   }
   const negSlope = $("filterNegSlope");
   if (negSlope) {
-    const on = !!state.allowNegSlope;
+    const autoOn = currentAutoNegSlope();
+    const on = !!state.allowNegSlope || autoOn;
     negSlope.classList.toggle("active", on);
     negSlope.setAttribute("aria-pressed", on ? "true" : "false");
+    negSlope.title = autoOn && !state.allowNegSlope
+      ? "不成線時已自動開啟斜率可負"
+      : "開啟後支撐／壓力斜率正負不限";
     if (opts.popKey === "negSlope") replayAnim(negSlope, "is-pop");
   }
   const ok = state.results.filter(r => r.bars).length;
-  const n = filteredResults().filter(r => r.bars).length;
+  const n = opts.skipCount ? ok : filteredResults().filter(r => r.bars).length;
   const meta = $("filterMeta");
   if (meta) {
     const tags = [];
     if (state.filters.breakout) tags.push("突破");
     if (state.filters.reclaim) tags.push("收回");
     if (state.filters.touch) tags.push("觸碰");
+    if (state.filters.past) tags.push("過去訊號");
     const skip = state.ignoreLastBars
       ? `略過最新 ${state.ignoreLastBars} 根${state.filterSkip ? "（篩選忽略）" : ""} · `
       : "";
@@ -2413,21 +2732,30 @@ function syncFilterChips(opts = {}) {
   }
 }
 
+function packViewOn() {
+  return state.view === "pack" || !!$("packView")?.classList.contains("is-on");
+}
+
 /** 清單 + Chartpack 同步套用篩選 */
 function applyFilters(opts = {}) {
-  syncFilterChips(opts);
-  renderList({ animate: true });
-  if (state.view === "pack" && state.results.some(r => r.bars)) {
-    renderPack();
-  } else if (state.view === "single" && state.selected) {
-    const row = filteredResults().find(r => r.symbol === state.selected)
-      || filteredResults().find(r => r.bars);
-    if (row) {
-      state.selected = row.symbol;
-      showSingle(row);
-      renderList({ animate: true });
+  syncFilterChips({ ...opts, skipCount: true });
+  const run = () => {
+    renderList({ animate: true });
+    if (packViewOn() && state.results.some(r => r.bars)) {
+      renderPack();
+    } else if (state.view === "single" && state.selected) {
+      const row = filteredResults().find(r => r.symbol === state.selected)
+        || filteredResults().find(r => r.bars);
+      if (row) {
+        state.selected = row.symbol;
+        showSingle(row);
+        renderList({ animate: true });
+      }
     }
-  }
+    syncFilterChips(opts);
+  };
+  if (state.filters.past) requestAnimationFrame(run);
+  else run();
 }
 
 function renderList(opts = {}) {
@@ -2444,6 +2772,7 @@ function renderList(opts = {}) {
     if (state.filters.breakout) tags.push("突破");
     if (state.filters.reclaim) tags.push("收回");
     if (state.filters.touch) tags.push("觸碰");
+    if (state.filters.past) tags.push("過去訊號");
     const n = filtered.filter(r => r.bars).length;
     meta.innerHTML = tags.length
       ? `篩選 <strong>${tags.join(" + ")}</strong> · <strong>${n}</strong> / ${ok} 檔`
@@ -2529,9 +2858,20 @@ function renderList(opts = {}) {
   });
   const activeEl = box.querySelector(".list-item.active");
   if (activeEl) {
-    const inline = window.matchMedia("(max-width: 980px)").matches ? "center" : "nearest";
-    activeEl.scrollIntoView({ block: "nearest", inline, behavior: "smooth" });
+    if (window.matchMedia("(max-width: 980px)").matches) {
+      const left = activeEl.offsetLeft - (box.clientWidth - activeEl.offsetWidth) / 2;
+      box.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+    } else {
+      activeEl.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
   }
+}
+
+function currentAutoNegSlope() {
+  if (state.view !== "single" || !state.selected) return false;
+  const row = state.results.find(r => r.symbol === state.selected);
+  if (!row?.bars) return false;
+  return !!rowAnalysis(row, state.ignoreLastBars)?.autoNegSlope;
 }
 
 function rowAnalysis(row, skipOverride) {
@@ -2612,6 +2952,8 @@ function showSingle(r) {
   if (r.error || !r.bars) {
     $("mainLegend").textContent = r.error || "無資料";
     replayAnim(wrap, "is-swap");
+    renderSignalCases(r);
+    scrollPageTop();
     return;
   }
   const analysis = rowAnalysis(r, state.ignoreLastBars);
@@ -2623,6 +2965,9 @@ function showSingle(r) {
   redrawMainChart(r);
   $("mainLegend").innerHTML = legendHtml(analysis);
   replayAnim(wrap, "is-swap");
+  renderSignalCases(r);
+  syncFilterChips({ skipCount: true });
+  scrollPageTop();
 }
 
 function renderPack() {
@@ -2654,22 +2999,9 @@ function renderPack() {
     headLeft.appendChild(dateEl);
     const tagBox = document.createElement("span");
     tagBox.className = "tags";
-    if (ev.reclaim) {
-      const t = document.createElement("span");
-      t.className = "tag is-reclaim";
-      t.textContent = "收回";
-      tagBox.appendChild(t);
-    } else if (ev.breakout) {
-      const t = document.createElement("span");
-      t.className = "tag is-break";
-      t.textContent = "突破";
-      tagBox.appendChild(t);
-    } else if (ev.touch) {
-      const t = document.createElement("span");
-      t.className = "tag is-touch";
-      t.textContent = "觸碰";
-      tagBox.appendChild(t);
-    }
+    if (ev.reclaim) addFilterTag(tagBox, "reclaim", "收回", "is-reclaim");
+    else if (ev.breakout) addFilterTag(tagBox, "breakout", "突破", "is-break");
+    else if (ev.touch) addFilterTag(tagBox, "touch", "觸碰", "is-touch");
     head.appendChild(headLeft);
     head.appendChild(tagBox);
     const info = document.createElement("div");
@@ -2678,6 +3010,20 @@ function renderPack() {
     card.appendChild(head);
     card.appendChild(canvas);
     card.appendChild(info);
+    const pastBox = document.createElement("div");
+    pastBox.className = "pack-past";
+    const pastHead = document.createElement("h4");
+    pastHead.textContent = "過去訊號";
+    const pastList = document.createElement("div");
+    pastBox.appendChild(pastHead);
+    pastBox.appendChild(pastList);
+    if (!fillSignalCases(pastList, r, { compact: true, stop: true })) {
+      const p = document.createElement("p");
+      p.className = "case-empty";
+      p.textContent = "無突破／收回";
+      pastList.appendChild(p);
+    }
+    card.appendChild(pastBox);
     card.tabIndex = 0;
     card.onclick = () => {
       state.selected = r.symbol;
@@ -2701,7 +3047,7 @@ function renderPack() {
   if (!box.children.length) {
     const active = anyFilterOn();
     box.innerHTML = active
-      ? `<div class="empty"><div class="empty-ico"></div><h3>沒有符合篩選的圖表</h3><p>試試「突破」「收回」或「觸碰」，或清除篩選。</p></div>`
+      ? `<div class="empty"><div class="empty-ico"></div><h3>沒有符合篩選的圖表</h3><p>試試「突破」「收回」「觸碰」或「過去訊號」，或清除篩選。</p></div>`
       : `<div class="empty"><div class="empty-ico"></div><h3>尚無可用圖表</h3><p>掃描完成後會顯示在這裡。</p></div>`;
   }
 }
@@ -2743,6 +3089,7 @@ function setView(v) {
     displaySymbol(state.selected) || "單圖",
     state.packDate ? `日線 · ${state.packDate}` : "日線單圖"
   );
+  scrollPageTop();
 }
 
 function updatePackButton() {
@@ -3143,6 +3490,10 @@ $("filterReclaim").onclick = () => {
 $("filterTouch").onclick = () => {
   state.filters.touch = !state.filters.touch;
   applyFilters({ popKey: "touch" });
+};
+$("filterPast").onclick = () => {
+  state.filters.past = !state.filters.past;
+  applyFilters({ popKey: "past" });
 };
 syncFilterChips();
 function applyLineMode(pop) {
