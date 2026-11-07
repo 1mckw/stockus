@@ -234,13 +234,6 @@ def choose_touch_segment(indices, min_touches, recent_lo=None):
     return {"seg": max(enough, key=_seg_key)}
 
 
-def longest_touch_segment(indices):
-    segs = _touch_segments(indices)
-    if not segs:
-        return []
-    return max(segs, key=_seg_key)
-
-
 def collect_raw_touches(bars, line, resistance, start_i, end_i):
     hits = []
     for i in range(start_i, end_i + 1):
@@ -322,7 +315,7 @@ def _merge_miss(into, frm):
 
 
 def format_why(kind, miss, no_window=False):
-    side = "支撐" if kind == "support" else "壓力" if kind == "resistance" else "通道"
+    side = "壓力" if kind == "resistance" else "支撐"
     if no_window:
         return f"{side}不成線：做線資料不足（少於 80 根）"
     if not miss or miss.get("tried", 0) <= 0:
@@ -412,52 +405,11 @@ def collect_side_line(bars, lookback, kind, min_touches=None, require_recent=Tru
     return best, miss
 
 
-def make_parallel_channel(L, bars):
-    if not L or not L.get("touches"):
-        return None, _empty_miss()
-    n = len(bars)
-    lookback = int(L.get("windowSize") or n)
-    win_lo = max(0, n - lookback)
-    last_i = n - 1
-    i0 = L.get("drawFrom", L["touches"][0])
-    if i0 >= last_i:
-        return None, _empty_miss()
-    opp = "resistance" if L["kind"] == "support" else "support"
-    highs, lows = _pivots_in_lookback(bars, lookback)
-    pts = lows if opp == "support" else highs
-    m = L["line"]["m"]
-    best = None
-    miss = _empty_miss()
-    for i in pts:
-        src_y = y_at(L["line"], i)
-        price = bars[i]["l"] if opp == "support" else bars[i]["h"]
-        if opp == "resistance" and price < src_y:
-            continue
-        if opp == "support" and price > src_y:
-            continue
-        ev = evaluate_candidate(bars, {"m": m, "b": price - m * i}, opp, win_lo, lookback)
-        cand = ev.get("line")
-        if cand is None:
-            _note_miss(miss, ev)
-            continue
-        if best is None or _line_score(cand) > _line_score(best):
-            best = cand
-    if best is None:
-        return None, miss
-    best["type"] = "channel"
-    best["label"] = "平行通道"
-    best["isParallel"] = True
-    best["pairOf"] = L["type"]
-    best["drawFrom"] = min(i0, best["touches"][0])
-    best["drawTo"] = n - 1
-    return best, miss
-
-
 def analyze_symbol(bars, windows=None):
     windows = list(windows or WINDOWS)
     n = len(bars)
     found = {}
-    why = {"support": None, "resistance": None, "channel": None}
+    why = {"support": None, "resistance": None}
 
     def search_kind(kind, min_touches=None, require_recent=True):
         miss = _empty_miss()
@@ -489,13 +441,7 @@ def analyze_symbol(bars, windows=None):
     for L in (up, down):
         if L and L.get("windowSize"):
             used = L["windowSize"] if used is None else max(used, L["windowSize"])
-    channel = None
-    primary = up if up and not down else (down if down and not up else None)
-    if primary:
-        channel, ch_miss = make_parallel_channel(primary, bars)
-        if not channel:
-            why["channel"] = format_why("channel", ch_miss)
-    return {"up": up, "down": down, "channel": channel, "window": used, "why": why}
+    return {"up": up, "down": down, "window": used, "why": why}
 
 
 def shift_line(L, offset: int):
@@ -522,7 +468,6 @@ def shift_analysis(analysis: dict, offset: int) -> dict:
         "window": analysis.get("window"),
         "up": shift_line(analysis.get("up"), offset),
         "down": shift_line(analysis.get("down"), offset),
-        "channel": shift_line(analysis.get("channel"), offset),
         "why": analysis.get("why"),
     }
 
@@ -543,8 +488,6 @@ def slim_line(L):
         "score": L.get("score"),
         "label": L.get("label"),
         "type": L.get("type"),
-        "isParallel": L.get("isParallel"),
-        "pairOf": L.get("pairOf"),
     }
 
 
@@ -579,7 +522,6 @@ def scan_index(index: str, date_str: str, sleep_s: float) -> dict:
                     "window": analysis["window"],
                     "up": slim_line(analysis["up"]),
                     "down": slim_line(analysis["down"]),
-                    "channel": slim_line(analysis["channel"]),
                     "why": analysis.get("why"),
                 },
             })
@@ -606,7 +548,7 @@ def recent_signal(row: dict, lookback: int = TREND_SIGNAL_BARS) -> str:
     n = len(bars)
     frm = max(0, n - lookback)
     breakout = touch = reclaim = False
-    for key in ("up", "down", "channel"):
+    for key in ("up", "down"):
         L = analysis.get(key)
         if not L or not L.get("line"):
             continue
@@ -647,7 +589,7 @@ def write_latest_md(out: Path, packs: list[dict]) -> None:
             sig = recent_signal(r) if r.get("bars") else (r.get("error") or "無資料")
             a = r.get("analysis") or {}
             labels = []
-            for key in ("up", "down", "channel"):
+            for key in ("up", "down"):
                 L = a.get(key)
                 if L and L.get("label"):
                     labels.append(L["label"])

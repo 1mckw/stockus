@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>NDX100 日線掃描器 · 趨勢線 / Creek / Ice</title>
-<meta name="description" content="NDX100 / DJI30 / CRYPTO30 日線四點成線掃描器：向上／向下趨勢線、Creek、Ice 與平行通道，附逐日 Chartpack。" />
+<meta name="description" content="NDX100 / DJI30 / CRYPTO30 日線四點成線掃描器：向上／向下趨勢線、Creek、Ice，附逐日 Chartpack。" />
 <meta name="theme-color" content="#161618" />
 <meta name="color-scheme" content="dark" />
 <meta name="mobile-web-app-capable" content="yes" />
@@ -454,6 +454,8 @@
     justify-content: space-between;
     gap: 16px;
     flex-shrink: 0;
+    position: relative;
+    z-index: 20;
     padding-bottom: 11px;
     border-bottom: 1px solid var(--line);
     margin-bottom: 16px;
@@ -488,13 +490,11 @@
     border-radius: 999px;
   }
   .skip-chips .filter-chip.active::after { display: none; }
-  .skip-cal-wrap { position: relative; flex: 0 0 auto; }
+  .skip-cal-wrap { position: relative; flex: 0 0 auto; z-index: 21; }
   .skip-cal {
     display: none;
-    position: absolute;
-    top: calc(100% + 8px);
-    left: 0;
-    z-index: 40;
+    position: fixed;
+    z-index: 200;
     width: 232px;
     padding: 12px;
     background: var(--surface-2);
@@ -697,7 +697,9 @@
   }
   .signal-case.is-on {
     background: var(--raised);
+    box-shadow: inset 2px 0 0 var(--accent-line);
   }
+  .signal-case.is-on .skip { color: var(--text); }
   .signal-case .skip {
     font-family: var(--mono);
     font-variant-numeric: tabular-nums;
@@ -745,7 +747,6 @@
   .c-down { --dot: var(--neg); }
   .c-creek { --dot: var(--warn); }
   .c-ice { --dot: var(--ice); }
-  .c-accent { --dot: var(--accent); }
 
   /* ---------- Chartpack grid ---------- */
   .pack-grid {
@@ -1226,7 +1227,8 @@ const CFG = {
   windows: [200, 300, 400, 500, 600, 800, 1000], // 做線視窗（由小到大）
   skipLastBarsMax: 20,
   chartWindow: 600, // 圖表固定顯示根數
-  chartRightPadBars: 20, // 視窗右緣預留空白（根）
+  chartRightPadBars: 20, // 單圖視窗右緣預留空白（根）
+  packRightPadBars: 40, // Chartpack 最新 K 右側空白（根）
   colors: {
     bg: "#0e0f12",
     grid: "#20232a",
@@ -1262,6 +1264,7 @@ const state = {
   view: "single",
   filters: { breakout: false, reclaim: false, touch: false, past: false },
   ignoreLastBars: 0,
+  casePick: {},
   filterSkip: false,
   allowNegSlope: false,
   chartSymbol: null,
@@ -1566,12 +1569,6 @@ function chooseTouchSegment(indices, minTouches, recentLo) {
   return { seg: pick(enough) };
 }
 
-function longestTouchSegment(indices) {
-  const segs = touchSegments(indices);
-  if (!segs.length) return [];
-  return segs.reduce((b, s) => (betterSeg(s, b) ? s : b));
-}
-
 function collectRawTouches(bars, line, resistance, startI, endI) {
   const hits = [];
   for (let i = startI; i <= endI; i++) {
@@ -1661,7 +1658,7 @@ function mergeMiss(into, from) {
 }
 
 function formatWhy(kind, miss, noWindow) {
-  const side = kind === "support" ? "支撐" : kind === "resistance" ? "壓力" : "通道";
+  const side = kind === "resistance" ? "壓力" : "支撐";
   if (noWindow) return `${side}不成線：做線資料不足（少於 80 根）`;
   if (!miss || miss.tried <= 0) return `${side}不成線：沒有可用樞軸錨點`;
   if (miss.fail === "breaks") {
@@ -1771,7 +1768,7 @@ function analyzeSymbol(bars, mode, skipLast = 0, fitOpts = {}) {
   const allowNeg = fitOpts.allowNegSlope != null ? !!fitOpts.allowNegSlope : !!state.allowNegSlope;
 
   const found = {};
-  const why = { support: null, resistance: null, channel: null };
+  const why = { support: null, resistance: null };
   function searchKind(kind, opts) {
     let miss = emptyMiss();
     let windowsTried = 0;
@@ -1799,15 +1796,7 @@ function analyzeSymbol(bars, mode, skipLast = 0, fitOpts = {}) {
     if (L?.windowSize) usedWindow = usedWindow == null ? L.windowSize : Math.max(usedWindow, L.windowSize);
   }
 
-  let channel = null;
-  const primary = up && !down ? up : (!up && down ? down : null);
-  if (primary) {
-    const ch = makeParallelChannel(primary, fit);
-    channel = ch.line || null;
-    if (!channel) why.channel = formatWhy("channel", ch.miss);
-  }
-
-  const out = { up, down, channel, window: usedWindow, bars, why, autoNegSlope: false };
+  const out = { up, down, window: usedWindow, bars, why, autoNegSlope: false };
   if (!allowNeg && !fitOpts._noRetry && !up && !down) {
     const retry = analyzeSymbol(bars, mode, skipLast, { allowNegSlope: true, _noRetry: true });
     if (retry.up || retry.down) {
@@ -1816,46 +1805,6 @@ function analyzeSymbol(bars, mode, skipLast = 0, fitOpts = {}) {
     }
   }
   return out;
-}
-
-/**
- * 單邊才找平行通道：同斜率、對側樞軸錨點，四點／實體破≤3／引線破≤5。
- */
-function makeParallelChannel(L, bars) {
-  if (!L?.touches?.length) return { line: null, miss: emptyMiss() };
-  const n = bars.length;
-  const lookback = L.windowSize || n;
-  const winLo = Math.max(0, n - lookback);
-  const i0 = L.drawFrom ?? L.touches[0];
-  if (i0 >= n - 1) return { line: null, miss: emptyMiss() };
-
-  const oppKind = L.kind === "support" ? "resistance" : "support";
-  const { highs, lows } = pivotsInLookback(bars, lookback);
-  const pts = oppKind === "support" ? lows : highs;
-  const m = L.line.m;
-  let best = null;
-  const miss = emptyMiss();
-
-  for (const i of pts) {
-    const srcY = yAt(L.line, i);
-    const price = oppKind === "support" ? bars[i].l : bars[i].h;
-    if (oppKind === "resistance" && price < srcY) continue;
-    if (oppKind === "support" && price > srcY) continue;
-    const ev = evaluateCandidate(bars, { m, b: price - m * i }, oppKind, winLo, lookback);
-    if (ev.line) {
-      if (!best || betterLine(ev.line, best)) best = ev.line;
-    } else {
-      noteMiss(miss, ev);
-    }
-  }
-  if (!best) return { line: null, miss };
-  best.type = "channel";
-  best.label = "平行通道";
-  best.isParallel = true;
-  best.pairOf = L.type;
-  best.drawFrom = Math.min(i0, best.touches[0]);
-  best.drawTo = n - 1;
-  return { line: best, miss };
 }
 
 /* ========== Chart drawing ========== */
@@ -1875,7 +1824,6 @@ function fmtDate(ts) {
 }
 
 function lineColorOf(L, c) {
-  if (L.type === "channel") return c.accent;
   if (L.type === "creek") return c.creek;
   if (L.type === "ice") return c.ice;
   if (L.type === "uptrend") return c.tlUp;
@@ -1883,7 +1831,6 @@ function lineColorOf(L, c) {
 }
 
 function lineNameOf(L) {
-  if (L.type === "channel") return "通道";
   if (L.type === "creek") return "Creek";
   if (L.type === "ice") return "Ice";
   if (L.type === "uptrend") return "趨勢線↑";
@@ -1897,7 +1844,7 @@ function lineNameOf(L) {
 /** Chartpack 若只存最後 N 根，觸點索引仍可能是完整序列；平移到目前 bars。 */
 function rebaseAnalysis(analysis, nBars) {
   if (!analysis || !nBars) return analysis;
-  const lines = [analysis.up, analysis.down, analysis.channel].filter(Boolean);
+  const lines = [analysis.up, analysis.down].filter(Boolean);
   if (!lines.length) return analysis;
   const idxs = [];
   for (const L of lines) {
@@ -1930,8 +1877,7 @@ function rebaseAnalysis(analysis, nBars) {
   return {
     ...analysis,
     up: shift(analysis.up),
-    down: shift(analysis.down),
-    channel: shift(analysis.channel)
+    down: shift(analysis.down)
   };
 }
 
@@ -1970,12 +1916,12 @@ function drawChart(canvas, bars, analysis, symbol, opts = {}) {
   ctx.clearRect(0, 0, cssW, cssH);
 
   const total = bars.length;
-  const rightPad = compact ? 0 : (CFG.chartRightPadBars | 0);
-  const defaultWin = compact ? 260 : (CFG.chartWindow || 600) + rightPad;
+  const rightPad = compact ? (CFG.packRightPadBars | 0) : (CFG.chartRightPadBars | 0);
+  const defaultWin = (compact ? 260 : (CFG.chartWindow || 600)) + rightPad;
   let win = opts.window || defaultWin;
-  win = Math.max(1, Math.min(compact ? total : total + rightPad, win));
+  win = Math.max(1, Math.min(total + rightPad, win));
   let end = opts.end != null ? opts.end : total + rightPad;
-  if (compact) end = Math.max(win, Math.min(total, end));
+  if (compact) end = Math.max(win, Math.min(total + rightPad, end));
   else end = Math.max(win, Math.min(total + win - 1, end));
   const start = end - win;
   const n = win;
@@ -1987,7 +1933,7 @@ function drawChart(canvas, bars, analysis, symbol, opts = {}) {
     ? { t: 12, r: 54, b: 21, l: 6 }
     : { t: 52, r: 68, b: 34, l: 8 };
 
-  const lineObjs = [analysis?.up, analysis?.down, analysis?.channel].filter(L => L?.line);
+  const lineObjs = [analysis?.up, analysis?.down].filter(L => L?.line);
 
   let lo = Infinity;
   let hi = -Infinity;
@@ -2119,9 +2065,9 @@ function drawChart(canvas, bars, analysis, symbol, opts = {}) {
     const y0 = yPx(yAt(L.line, start + iFrom));
 
     ctx.strokeStyle = color;
-    ctx.lineWidth = L.type === "channel" ? 1.25 : 1.75;
+    ctx.lineWidth = 1.75;
     ctx.setLineDash(
-      L.type === "channel" ? [4, 4] : (L.type === "creek" || L.type === "ice") ? [7, 4] : []
+      (L.type === "creek" || L.type === "ice") ? [7, 4] : []
     );
     ctx.beginPath();
     ctx.moveTo(x0, y0);
@@ -2287,11 +2233,10 @@ function legendHtml(analysis) {
   const add = (L) => {
     if (!L) return;
     const cls =
-      L.type === "channel" ? "c-accent" :
       L.type === "creek" ? "c-creek" :
       L.type === "ice" ? "c-ice" :
       L.type === "uptrend" ? "c-up" : "c-down";
-    const name = L.type === "channel" ? "平行通道" : L.label;
+    const name = L.label;
     parts.push(
       `<span class="lg ${cls}"><b>${name}</b><em>${L.touches.length} 觸點 · 實體 ${L.bodyBreaks} · 引線 ${L.wickBreaks ?? 0} · ${L.windowSize}K</em></span>`
     );
@@ -2306,8 +2251,6 @@ function legendHtml(analysis) {
   if (!analysis?.up) addWhy(analysis?.why?.support);
   add(analysis?.down);
   if (!analysis?.down) addWhy(analysis?.why?.resistance);
-  add(analysis?.channel);
-  if (analysis?.why?.channel && !analysis?.channel) addWhy(analysis.why.channel);
   if (analysis?.autoNegSlope) {
     parts.push(`<span class="lg is-why"><b>斜率可負</b><em>不成線時自動開啟</em></span>`);
   }
@@ -2430,7 +2373,7 @@ function recentLineEvents(row, lookback = 5) {
   let touch = false;
   let breakout = false;
   let reclaim = false;
-  const lines = [analysis.up, analysis.down, analysis.channel].filter(Boolean);
+  const lines = [analysis.up, analysis.down].filter(Boolean);
   for (const L of lines) {
     if (!L.line) continue;
     const resistance = L.kind === "resistance";
@@ -2461,7 +2404,7 @@ function recentLineEventsAt(row, skip, lookback = 5) {
   let touch = false;
   let breakout = false;
   let reclaim = false;
-  const lines = [analysis.up, analysis.down, analysis.channel].filter(Boolean);
+  const lines = [analysis.up, analysis.down].filter(Boolean);
   for (const L of lines) {
     if (!L.line) continue;
     const resistance = L.kind === "resistance";
@@ -2497,13 +2440,6 @@ function collectSignalCases(row) {
     if (ev.breakout || ev.reclaim) out.push({ skip, breakout: ev.breakout, reclaim: ev.reclaim });
   }
   row._casesBy[key] = out;
-  if (!row._hasPast) row._hasPast = {};
-  row._hasPast[key] = out.length > 0;
-  if (!row._hasKind) row._hasKind = {};
-  row._hasKind[key] = {
-    breakout: out.some(c => c.breakout),
-    reclaim: out.some(c => c.reclaim)
-  };
   return out;
 }
 
@@ -2541,12 +2477,68 @@ function hasKindInSkips(row, kinds, lo, hi) {
   return false;
 }
 
+function listedPastCases(row) {
+  if (!row?.bars) return [];
+  return collectSignalCases(row).filter(caseMatchesFilter);
+}
+
+function caseAppliedSkip(row) {
+  if (!row?.symbol) return null;
+  if (Object.prototype.hasOwnProperty.call(state.casePick, row.symbol)) {
+    const v = state.casePick[row.symbol] | 0;
+    return v < 0 ? null : v;
+  }
+  if (state.filters.past) {
+    const first = listedPastCases(row)[0];
+    return first ? (first.skip | 0) : null;
+  }
+  if (state.filterSkip) return state.ignoreLastBars | 0;
+  return null;
+}
+
+function caseSkipForRow(row) {
+  const v = caseAppliedSkip(row);
+  return v == null ? 0 : v;
+}
+
+function caseIsOn(row, skip) {
+  const v = caseAppliedSkip(row);
+  return v != null && v === (skip | 0);
+}
+
+function adoptCaseSkip(row) {
+  if (!row?.symbol) return;
+  if (Object.prototype.hasOwnProperty.call(state.casePick, row.symbol)) {
+    const v = state.casePick[row.symbol] | 0;
+    state.ignoreLastBars = v < 0 ? 0 : v;
+    return;
+  }
+  if (state.filters.past) {
+    const first = listedPastCases(row)[0];
+    if (first) state.ignoreLastBars = first.skip | 0;
+  }
+}
+
 function applySignalCase(row, skip) {
   if (!row) return;
-  state.filterSkip = true;
+  skip = skip | 0;
   state.selected = row.symbol;
-  state.ignoreLastBars = skip | 0;
-  showSingle(row);
+  if (caseIsOn(row, skip)) {
+    state.casePick[row.symbol] = -1;
+    state.filterSkip = false;
+    state.ignoreLastBars = 0;
+  } else {
+    state.casePick[row.symbol] = skip;
+    state.filterSkip = true;
+    state.ignoreLastBars = skip;
+  }
+  if (state.view === "pack" && packViewOn()) {
+    renderPack();
+    renderList();
+    syncFilterChips({ popKey: "skip" });
+    return;
+  }
+  showSingle(row, { skipScroll: true });
   setView("single");
   syncFilterChips({ popKey: "skip" });
 }
@@ -2588,8 +2580,7 @@ function fillSignalCases(box, row, opts = {}) {
     }
     return false;
   }
-  const cases = collectSignalCases(row).filter(caseMatchesFilter);
-  const cur = state.ignoreLastBars | 0;
+  const cases = listedPastCases(row);
   if (!cases.length) {
     if (!opts.compact) {
       const p = document.createElement("p");
@@ -2602,7 +2593,10 @@ function fillSignalCases(box, row, opts = {}) {
   for (const c of cases) {
     const el = document.createElement("button");
     el.type = "button";
-    el.className = "signal-case" + (c.skip === cur ? " is-on" : "");
+    const on = caseIsOn(row, c.skip);
+    el.className = "signal-case" + (on ? " is-on" : "");
+    el.setAttribute("aria-pressed", on ? "true" : "false");
+    el.title = on ? "再點一次取消套用" : "套用此忽略";
     const skipEl = document.createElement("span");
     skipEl.className = "skip";
     skipEl.textContent = c.skip ? `忽略${c.skip}` : "不忽略";
@@ -2748,7 +2742,7 @@ function applyFilters(opts = {}) {
         || filteredResults().find(r => r.bars);
       if (row) {
         state.selected = row.symbol;
-        showSingle(row);
+        showSingle(row, { pickFirstPast: opts.popKey === "past" && !!state.filters.past });
         renderList({ animate: true });
       }
     }
@@ -2933,9 +2927,11 @@ function redrawMainChart(row) {
   });
 }
 
-function showSingle(r) {
+function showSingle(r, opts = {}) {
   state.view = "single";
   showPane("singleView");
+  if (opts.pickFirstPast && r?.symbol) delete state.casePick[r.symbol];
+  adoptCaseSkip(r);
   const btnS = $("btnSingle");
   const btnP = $("btnPack");
   if (btnS && !btnS.classList.contains("active")) replayAnim(btnS, "is-pop");
@@ -2953,7 +2949,7 @@ function showSingle(r) {
     $("mainLegend").textContent = r.error || "無資料";
     replayAnim(wrap, "is-swap");
     renderSignalCases(r);
-    scrollPageTop();
+    if (!opts.skipScroll) scrollPageTop();
     return;
   }
   const analysis = rowAnalysis(r, state.ignoreLastBars);
@@ -2967,7 +2963,7 @@ function showSingle(r) {
   replayAnim(wrap, "is-swap");
   renderSignalCases(r);
   syncFilterChips({ skipCount: true });
-  scrollPageTop();
+  if (!opts.skipScroll) scrollPageTop();
 }
 
 function renderPack() {
@@ -2984,7 +2980,8 @@ function renderPack() {
     canvas.width = 900;
     canvas.height = 486;
     const head = document.createElement("header");
-    const ev = recentLineEvents(r);
+    const skip = caseSkipForRow(r);
+    const ev = recentLineEventsAt(r, skip);
     const symEl = document.createElement("span");
     symEl.className = "sym";
     symEl.textContent = displaySymbol(r.symbol);
@@ -3006,7 +3003,7 @@ function renderPack() {
     head.appendChild(tagBox);
     const info = document.createElement("div");
     info.className = "info";
-    info.innerHTML = legendHtml(rowAnalysis(r));
+    info.innerHTML = legendHtml(rowAnalysis(r, skip));
     card.appendChild(head);
     card.appendChild(canvas);
     card.appendChild(info);
@@ -3038,10 +3035,10 @@ function renderPack() {
       }
     };
     box.appendChild(card);
-    drawChart(canvas, r.bars, rowAnalysis(r), r.symbol, {
+    drawChart(canvas, r.bars, rowAnalysis(r, skip), r.symbol, {
       date: state.packDate,
       compact: true,
-      skipLast: state.filterSkip ? state.ignoreLastBars : 0
+      skipLast: skip
     });
   }
   if (!box.children.length) {
@@ -3120,7 +3117,6 @@ function buildPackPayload(dateStr) {
           window: r.analysis.window,
           up: r.analysis.up || null,
           down: r.analysis.down || null,
-          channel: r.analysis.channel || null,
           why: r.analysis.why || null
         }
       };
@@ -3510,6 +3506,10 @@ function setSkipLast(n, apply) {
   const max = CFG.skipLastBarsMax || 20;
   n = Math.max(0, Math.min(max, n | 0));
   state.ignoreLastBars = n;
+  if (state.selected) {
+    if (n > 0) state.casePick[state.selected] = n;
+    else state.casePick[state.selected] = -1;
+  }
   if (!apply) {
     syncFilterChips({ popKey: "skip" });
     return;
@@ -3525,9 +3525,33 @@ function setSkipLast(n, apply) {
     }
   }
 }
+function placeSkipCal() {
+  const panel = $("skipLastPanel");
+  const btn = $("filterSkipToggle");
+  if (!panel || !btn) return;
+  const r = btn.getBoundingClientRect();
+  const w = panel.offsetWidth || 232;
+  const h = panel.offsetHeight || 280;
+  let left = r.left;
+  if (left + w > window.innerWidth - 8) left = Math.max(8, window.innerWidth - w - 8);
+  if (left < 8) left = 8;
+  let top = r.bottom + 8;
+  if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - 8 - h);
+  panel.style.left = `${left}px`;
+  panel.style.top = `${top}px`;
+}
+
 function setSkipPickerOpen(on) {
   const wrap = $("skipCalWrap");
   if (wrap) wrap.classList.toggle("is-open", !!on);
+  const panel = $("skipLastPanel");
+  if (on) {
+    placeSkipCal();
+    requestAnimationFrame(placeSkipCal);
+  } else if (panel) {
+    panel.style.left = "";
+    panel.style.top = "";
+  }
   syncFilterChips();
 }
 function selectSkipLast(n) {
@@ -3584,6 +3608,7 @@ let __resizeTimer = 0;
 function onViewportResize() {
   clearTimeout(__resizeTimer);
   __resizeTimer = window.setTimeout(() => {
+    if ($("skipCalWrap")?.classList.contains("is-open")) placeSkipCal();
     if (state.view === "pack") {
       renderPack();
       return;
