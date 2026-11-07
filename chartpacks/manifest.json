@@ -2,6 +2,27 @@
   "packs": [
     {
       "index": "ndx100",
+      "date": "2026-11-07",
+      "file": "ndx100-2026-11-07.json",
+      "label": "NDX100",
+      "count": 101
+    },
+    {
+      "index": "dji30",
+      "date": "2026-11-07",
+      "file": "dji30-2026-11-07.json",
+      "label": "DJI30",
+      "count": 30
+    },
+    {
+      "index": "crypto30",
+      "date": "2026-11-07",
+      "file": "crypto30-2026-11-07.json",
+      "label": "CRYPTO30",
+      "count": 30
+    },
+    {
+      "index": "ndx100",
       "date": "2026-11-06",
       "file": "ndx100-2026-11-06.json",
       "label": "NDX100",
