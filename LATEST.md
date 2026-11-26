@@ -154,23 +154,23 @@
 | BTC-USD | — | 向下趨勢線 |
 | ETH-USD | — | 向下趨勢線 |
 | BNB-USD | — | — |
-| XRP-USD | — | — |
+| XRP-USD | 觸碰 | 向下趨勢線 |
 | SOL-USD | — | 向下趨勢線 |
 | TRX-USD | — | 向下趨勢線 |
 | HYPE32196-USD | 觸碰 | 向上趨勢線 |
-| ZEC-USD | — | — |
-| DOGE-USD | — | 向下趨勢線 |
+| ZEC-USD | 觸碰 | 向上趨勢線 |
+| DOGE-USD | 觸碰 | 向下趨勢線 |
 | XMR-USD | — | 向上趨勢線 |
-| LINK-USD | 突破 | 向下趨勢線 |
+| LINK-USD | — | 向下趨勢線 |
 | LEO-USD | 突破 | 向上趨勢線 / 向下趨勢線 |
 | ADA-USD | — | — |
-| XLM-USD | 突破 | 向下趨勢線 |
+| XLM-USD | — | 向下趨勢線 |
 | NEAR-USD | — | — |
 | BCH-USD | — | 向下趨勢線 |
-| UNI7083-USD | 觸碰 | 向上趨勢線 |
-| LTC-USD | — | 向下趨勢線 |
+| UNI7083-USD | — | 向上趨勢線 |
+| LTC-USD | 觸碰 | 向下趨勢線 |
 | AVAX-USD | — | — |
-| SUI20947-USD | 突破 | 向上趨勢線 / 向下趨勢線 |
+| SUI20947-USD | 觸碰 | 向下趨勢線 |
 | TON-USD | — | 向下趨勢線 |
 | HBAR-USD | 觸碰 | 向下趨勢線 |
 | SHIB-USD | — | — |
@@ -179,5 +179,5 @@
 | ENA-USD | — | 向下趨勢線 |
 | QNT-USD | — | 向下趨勢線 |
 | OKB-USD | — | — |
-| AAVE-USD | 觸碰 | 向下趨勢線 |
+| AAVE-USD | 觸碰 | 向上趨勢線 / 向下趨勢線 |
 | PEPE24478-USD | — | 向下趨勢線 |
